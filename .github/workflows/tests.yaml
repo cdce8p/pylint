@@ -69,8 +69,11 @@ jobs:
         run: |
           . venv/bin/activate
           pip list | grep 'astroid\|pylint'
-          pytest --durations=10 --benchmark-disable --cov --cov-report= tests/
+          pip uninstall -y astroid
+          pip install -U git+https://github.com/cdce8p/astroid.git@dev
+          pytest --durations=10 --benchmark-disable --cov --cov-report= tests/test_functional.py
       - name: Run functional tests with minimal messages config
+        if: false
         run: |
           . venv/bin/activate
           pip list | grep 'astroid\|pylint'
@@ -83,6 +86,7 @@ jobs:
 
   coverage:
     name: process / coverage
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: tests-linux
@@ -119,6 +123,7 @@ jobs:
 
   benchmark-linux:
     name: run benchmark / ${{ matrix.python-version }} / Linux
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: tests-linux
@@ -169,6 +174,7 @@ jobs:
 
   tests-windows:
     name: run / ${{ matrix.python-version }} / Windows
+    if: false
     runs-on: windows-latest
     timeout-minutes: 25
     needs: tests-linux
@@ -264,6 +270,7 @@ jobs:
 
   tests-pypy:
     name: run / ${{ matrix.python-version }} / Linux
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
