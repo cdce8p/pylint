@@ -218,6 +218,8 @@ jobs:
       - name: Run pytest
         run: |
           . venv/bin/activate
+          pip uninstall -y astroid
+          pip install -U git+git://github.com/cdce8p/astroid.git@dev
           pytest --benchmark-disable --cov --cov-report= tests/
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v2.2.4
@@ -303,6 +305,8 @@ jobs:
           . venv/bin/activate
           pip install pygal
           pip install -e .
+          pip uninstall -y astroid
+          pip install -U git+git://github.com/cdce8p/astroid.git@dev
           pytest --exitfirst \
             --benchmark-only \
             --benchmark-autosave \
@@ -398,6 +402,8 @@ jobs:
       - name: Run pytest
         run: |
           . venv\\Scripts\\activate
+          pip uninstall -y astroid
+          pip install -U git+git://github.com/cdce8p/astroid.git@dev
           pytest --benchmark-disable tests/
 
   prepare-tests-pypy:
@@ -474,4 +480,6 @@ jobs:
       - name: Run pytest
         run: |
           . venv/bin/activate
+          pip uninstall -y astroid
+          pip install -U git+git://github.com/cdce8p/astroid.git@dev
           pytest --benchmark-disable tests/
