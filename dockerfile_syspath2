@@ -1,0 +1,9 @@
+FROM python:3.9
+RUN git clone --depth 1 https://github.com/PyCQA/pylint
+WORKDIR pylint
+RUN git fetch origin pull/4260/head:syspath && git checkout syspath
+RUN pip install astroid isort pytest mccabe pytest-benchmark
+RUN bash -c "PYTHONPATH=:$(pwd) pytest tests/test_self.py -vv"
+
+
+# docker build --pull --no-cache --rm -f "new_folder/dockerfile_syspath2" -t testfiles:latest "new_folder"
