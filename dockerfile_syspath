@@ -1,0 +1,11 @@
+FROM python:3.9
+RUN pip install pylint pytest
+RUN pip uninstall -y pylint
+RUN mkdir pylint
+WORKDIR /pylint
+VOLUME /pylint
+
+# docker run --rm --volume=/Users/<..user..>/Develop/pylint:/pylint -it pylint:latest /bin/bash
+# pip install -e .
+# PYTHONPATH=/custom python test.py
+# PYTHONPATH=$(pwd) pytest tests/test_self.py::TestRunTC::test_do_not_import_files_from_local_directory
