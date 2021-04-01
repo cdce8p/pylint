@@ -1,0 +1,2 @@
+unsubscriptable-object:4:0::Value 're.Pattern' is unsubscriptable
+unsubscriptable-object:5:0::Value 'list' is unsubscriptable
