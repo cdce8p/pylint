@@ -131,6 +131,10 @@ class TypingChecker(BaseChecker):
             "``collections.abc.Callable`` inside Optional and Union is broken in "
             "Python 3.9.0 and 3.9.1. Use ``typing.Callable`` for these cases instead. "
             "https://bugs.python.org/issue42965",
+        "W6006": (
+            "Typing name '%s' not imported from typing module",
+            "imported-not-from-typing",
+            "",
         ),
     }
     options = (
@@ -170,6 +174,8 @@ class TypingChecker(BaseChecker):
         self._alias_name_collisions: set[str] = set()
         self._deprecated_typing_alias_msgs: list[DeprecatedTypingAliasMsg] = []
         self._consider_using_alias_msgs: list[DeprecatedTypingAliasMsg] = []
+        self._typing_imports: set[str] = set()
+        self._import_from_nodes: dict = {}
 
     def open(self) -> None:
         py_version = get_global_option(self, "py-version")
@@ -199,6 +205,7 @@ class TypingChecker(BaseChecker):
         "consider-alternative-union-syntax",
         "broken-noreturn",
         "broken-collections-callable",
+        "imported-not-from-typing",
     )
     def visit_name(self, node: nodes.Name) -> None:
         if self._should_check_typing_alias and node.name in ALIAS_NAMES:
@@ -209,6 +216,16 @@ class TypingChecker(BaseChecker):
             self._check_broken_noreturn(node)
         if self._should_check_callable and node.name == "Callable":
             self._check_broken_callable(node)
+
+        inferred = safe_infer(node)
+        if isinstance(inferred, (astroid.ClassDef,)) and inferred.qname().startswith(
+            "typing."
+        ):
+            self._check_typing_import(node, inferred)
+
+    def _check_typing_import(self, node: astroid.Name, inferred: astroid.ClassDef):
+        if inferred.name not in self._typing_imports:
+            self.add_message("imported-not-from-typing", node=node, args=(node.name,))
 
     @check_messages(
         "deprecated-typing-alias",
@@ -307,6 +324,12 @@ class TypingChecker(BaseChecker):
                 isinstance(node.parent, nodes.Subscript),
             )
         )
+
+    def visit_importfrom(self, node: astroid.ImportFrom):
+        if node.modname == "typing":
+            for name, _ in node.names:
+                self._typing_imports.add(name)
+        self._import_from_nodes[node] = node.names
 
     @check_messages("consider-using-alias")
     def leave_module(self, node: nodes.Module) -> None:
