@@ -17,10 +17,17 @@ import re
 import sys
 import textwrap
 import tokenize
+from functools import lru_cache
 
 from astroid import Module, modutils
 
-from pylint.constants import PY_EXTS
+from pylint.constants import PY310_PLUS, PY_EXTS
+
+# this is a performance hack. see https://bugs.python.org/issue43014
+# See also: https://github.com/PyCQA/pycodestyle/pull/993
+if not PY310_PLUS and callable(getattr(tokenize, "_compile", None)):
+    tokenize._compile = lru_cache()(tokenize._compile)  # type: ignore
+
 
 DEFAULT_LINE_LENGTH = 79
 
