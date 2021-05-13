@@ -597,7 +597,9 @@ class StringFormatChecker(BaseChecker):
                             warn_error = True
                         except astroid.InferenceError:
                             break
-                        if previous is astroid.Uninferable:
+                        if not isinstance(previous, list):
+                            previous = [previous]
+                        if astroid.Uninferable in previous:
                             break
                     else:
                         try:
@@ -615,6 +617,10 @@ class StringFormatChecker(BaseChecker):
                         )
                         break
 
+                if isinstance(previous, list):
+                    if len(previous) != 1:
+                        break
+                    previous = previous[0]
                 try:
                     previous = next(previous.infer())
                 except astroid.InferenceError:
