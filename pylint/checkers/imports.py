@@ -586,7 +586,7 @@ class ImportsChecker(DeprecatedMixin, BaseChecker):
                 "ungrouped-imports", import_node.fromlineno
             ):
                 continue
-            if isinstance(import_node, astroid.node_classes.ImportFrom):
+            if isinstance(import_node, astroid.ImportFrom):
                 met = met_from
             else:
                 met = met_import
