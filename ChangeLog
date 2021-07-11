@@ -53,6 +53,12 @@ Release date: TBA
 
   Closes #4698
 
+* Don't emit ``import-error``, ``no-name-in-module``, and ``ungrouped-imports``
+  for imports guarded by ``sys.version_info`` or ``typing.TYPE_CHECKING``.
+
+  Closes #3285
+  Closes #3382
+
 
 What's New in Pylint 2.9.3?
 ===========================
