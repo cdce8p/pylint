@@ -22,9 +22,10 @@ class FunctionalTestFile:
         "requires": lambda s: s.split(","),
     }
 
-    def __init__(self, directory, filename):
+    def __init__(self, directory, filename, is_package=False):
         self._directory = directory
         self.base = filename.replace(".py", "")
+        self.is_package = is_package
         self.options = {
             "min_pyver": (2, 5),
             "max_pyver": (4, 0),
@@ -64,6 +65,8 @@ class FunctionalTestFile:
 
     @property
     def source(self):
+        if self.is_package:
+            return self._file_type("")
         return self._file_type(".py")
 
     def _file_type(self, ext, check_exists=True):
