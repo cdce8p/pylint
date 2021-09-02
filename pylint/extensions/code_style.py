@@ -48,6 +48,16 @@ class CodeStyleChecker(BaseChecker):
             "consider-using-namedtuple-or-dataclass",
             "Emitted when dictionary values can be replaced by namedtuples or dataclass instances.",
         ),
+        "R6110": (
+            "Consider using namedtuple or dataclass for dictionary values",
+            "consider-using-namedtuple-or-dataclass-2",
+            "Emitted when dictionary values can be replaced by namedtuples or dataclass instances.",
+        ),
+        "R6111": (
+            "Consider using namedtuple or dataclass for dictionary values",
+            "consider-using-namedtuple-or-dataclass-3",
+            "Emitted when dictionary values can be replaced by namedtuples or dataclass instances.",
+        ),
         "R6102": (
             "Consider using an in-place tuple instead of list",
             "consider-using-tuple",
@@ -89,6 +99,7 @@ class CodeStyleChecker(BaseChecker):
         )
 
     @check_messages("consider-using-namedtuple-or-dataclass")
+    @check_messages("consider-using-namedtuple-or-dataclass-2")
     def visit_dict(self, node: nodes.Dict) -> None:
         self._check_dict_consider_namedtuple_dataclass(node)
 
@@ -180,6 +191,48 @@ class CodeStyleChecker(BaseChecker):
 
             self.add_message("consider-using-namedtuple-or-dataclass", node=node)
             return
+
+        # # All dict_values are itself calls to dict or typeddict
+        # if all(isinstance(dict_value, astroid.Call) for _, dict_value in node.items):
+        #     inferred = safe_infer(node.items[0][1])
+
+        #     # check either `qname` for `builtins.dict`
+        #     # or `_proxied.mro()` -> `qname` for `typing.TypedDict`
+
+        #     for _, dict_value in node.items[1:]:
+
+        #         inferred = safe_infer(dict_value)
+
+        # All dict_values are itself call nodes
+        if len(node.items) > 1 and all(
+            isinstance(dict_value, nodes.Call) for _, dict_value in node.items
+        ):
+            call_func: nodes.Name = node.items[0][1].func  # type: ignore
+            call_func_name = call_func.as_string()
+            if any(call.func.as_string() != call_func_name for _, call in node.items):  # type: ignore
+                return
+
+            inferred = safe_infer(call_func)
+            if not isinstance(inferred, nodes.ClassDef):
+                return
+
+            # print(inferred.mro())
+            # print(inferred.bases)
+            # print(list(inferred.bases[0].infer()))
+            # print(safe_infer(inferred.bases[0]))
+            t = 0
+            for base in inferred.mro():
+                # print(base.qname())
+                if base.qname() in {"typing.TypedDict", "typing_extensions.TypedDict"}:
+                    t = 2
+                    break
+                if base.qname() == "builtins.dict":
+                    t = 3
+                    break
+            else:
+                return
+
+            self.add_message(f"consider-using-namedtuple-or-dataclass-{t}", node=node)
 
     def _check_consider_using_assignment_expr(self, node: nodes.If) -> None:
         """Check if an assignment expression (walrus operator) can be used.
