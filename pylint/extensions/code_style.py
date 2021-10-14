@@ -254,6 +254,84 @@ class CodeStyleChecker(BaseChecker):
                 ),
             },
         ),
+        (
+            "assignment-expr-assign-lambda",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a lambda expression. "
+                    "Ie. for ``var = lambda: print('Hello')``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-compare",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a comparison. "
+                    "Ie. for ``var = 42 == some_other_var``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-boolop",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a boolean operation. "
+                    "Ie. for ``var = 42 and some_other_var``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-binop",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a binary operation. "
+                    "Ie. for ``var = 1 | 2``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-call",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a function call. "
+                    "Ie. for ``var = some_function()``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-call-func-names",
+            {
+                "default": (),
+                "type": "csv",
+                "metavar": "<function_names>",
+                "help": (
+                    "List of function names in assignment values to still suggest "
+                    "assignment expressions. Leave empty to allow all names, "
+                    "disable by setting ``assignment-expr-assign-call=False``."
+                ),
+            },
+        ),
     )
 
     def open(self) -> None:
@@ -300,6 +378,24 @@ class CodeStyleChecker(BaseChecker):
         self.conf_assignment_expr_assign_comprehension: bool = (
             self.config.assignment_expr_assign_comprehension
         )
+        self.conf_assignment_expr_assign_lambda: bool = (
+            self.config.assignment_expr_assign_lambda
+        )
+        self.conf_assignment_expr_assign_compare: bool = (
+            self.config.assignment_expr_assign_compare
+        )
+        self.conf_assignment_expr_assign_boolop: bool = (
+            self.config.assignment_expr_assign_boolop
+        )
+        self.conf_assignment_expr_assign_binop: bool = (
+            self.config.assignment_expr_assign_binop
+        )
+        self.conf_assignment_expr_assign_call: bool = (
+            self.config.assignment_expr_assign_call
+        )
+        self.conf_assignment_expr_assign_call_func_names: Tuple[
+            str, ...
+        ] = self.config.assignment_expr_assign_call_func_names
 
     @only_required_for_messages("prefer-typing-namedtuple")
     def visit_call(self, node: nodes.Call) -> None:
@@ -533,6 +629,7 @@ class CodeStyleChecker(BaseChecker):
             return True
         return False
 
+    # pylint: disable-next=too-many-return-statements
     def _check_assignment_value(
         self, assign_value: Optional[nodes.NodeNG]
     ) -> TypeGuard[nodes.NodeNG]:
@@ -548,6 +645,25 @@ class CodeStyleChecker(BaseChecker):
             return self.conf_assignment_expr_assign_ifexp
         if isinstance(assign_value, nodes.ComprehensionScope):
             return self.conf_assignment_expr_assign_comprehension
+        if isinstance(assign_value, nodes.Lambda):
+            return self.conf_assignment_expr_assign_lambda
+        if isinstance(assign_value, nodes.Compare):
+            return (
+                len(assign_value.ops) == 1 and self.conf_assignment_expr_assign_compare
+            )
+        if isinstance(assign_value, nodes.BoolOp):
+            return self.conf_assignment_expr_assign_boolop
+        if isinstance(assign_value, nodes.BinOp):
+            return self.conf_assignment_expr_assign_binop
+        if isinstance(assign_value, nodes.Call):
+            return len(self.conf_assignment_expr_assign_call_func_names) == 0 or (
+                isinstance(assign_value.func, nodes.Attribute)
+                and assign_value.func.attrname
+                in self.conf_assignment_expr_assign_call_func_names
+                or isinstance(assign_value.func, nodes.Name)
+                and assign_value.func.name
+                in self.conf_assignment_expr_assign_call_func_names
+            )
         return True
 
     @staticmethod
