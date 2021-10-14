@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 from typing import TYPE_CHECKING, TypeGuard, cast
 
 from astroid import nodes
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from pylint.lint import PyLinter
 
 
+# pylint: disable-next=too-many-instance-attributes
 class CodeStyleChecker(BaseChecker):
     """Checkers that can improve code consistency.
 
@@ -98,6 +100,254 @@ class CodeStyleChecker(BaseChecker):
                 ),
             },
         ),
+        # Settings to customize assignment expression suggestions
+        (
+            "assignment-expr-not",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains a ``not``. Ie. for ``if not var: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-none",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains ``is None`` or ``is not None``. "
+                    "Ie. for ``if var is None: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-const",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains a constant, NAME, or ATTRIBUTE. "
+                    "Ie. for ``if var == 'Hello World': ...``, "
+                    "``if var == CONST: ...``, ``if var == x.attribute: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-in",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains an ``in`` or ``not in`` check. "
+                    "Ie. for ``if var in some_list: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-call",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains a function call. "
+                    "Ie. for ``if var == some_func(): ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-call-func-names",
+            {
+                "default": ("get", "len"),
+                "type": "csv",
+                "metavar": "<function_names>",
+                "help": (
+                    "List of function names in tests to still suggest "
+                    "assignment expressions. Leave empty to allow all names, "
+                    "disable by setting ``assignment-expr-compare-call=False``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-not",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value begins with ``not``. "
+                    "Ie. for ``var = not some_value``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-getitem",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a __getitem__ call. "
+                    "Ie. for ``var = config[some_val]``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-annotation",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment is an annotated assignment. "
+                    "Ie. for ``var: int = some_function()``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-await",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value begins with an ``await``. "
+                    "Ie. for ``var = await some_function()``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-ifexp",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is an if expressions. "
+                    "Ie. for ``var = 2 if some_bool else 42``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-comprehension",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a comprehension. "
+                    "Ie. for ``var = [x.attr for x in func()]``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-lambda",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a lambda expression. "
+                    "Ie. for ``var = lambda: print('Hello')``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-compare",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a comparison. "
+                    "Ie. for ``var = 42 == some_other_var``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-boolop",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a boolean operation. "
+                    "Ie. for ``var = 42 and some_other_var``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-binop",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a binary operation. "
+                    "Ie. for ``var = 1 | 2``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-call",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a function call. "
+                    "Ie. for ``var = some_function()``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-call-func-names",
+            {
+                "default": (),
+                "type": "csv",
+                "metavar": "<function_names>",
+                "help": (
+                    "List of function names in assignment values to still suggest "
+                    "assignment expressions. Leave empty to allow all names, "
+                    "disable by setting ``assignment-expr-assign-call=False``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-call-func-names-rgxs",
+            {
+                "default": (),
+                "type": "regexp_csv",
+                "metavar": "<function_names>",
+                "help": (
+                    "List of function name regex in assignment values to still suggest "
+                    "assignment expressions. Leave empty to allow all names, "
+                    "disable by setting ``assignment-expr-assign-call=False``."
+                ),
+            },
+        ),
     )
 
     def open(self) -> None:
@@ -108,6 +358,64 @@ class CodeStyleChecker(BaseChecker):
             self.linter.config.max_line_length_suggestions
             or self.linter.config.max_line_length
         )
+
+        self.conf_assignment_expr_not: bool = self.linter.config.assignment_expr_not
+        self.conf_assignment_expr_compare_none: bool = (
+            self.linter.config.assignment_expr_compare_none
+        )
+        self.conf_assignment_expr_compare_const: bool = (
+            self.linter.config.assignment_expr_compare_const
+        )
+        self.conf_assignment_expr_compare_in: bool = (
+            self.linter.config.assignment_expr_compare_in
+        )
+        self.conf_assignment_expr_compare_call: bool = (
+            self.linter.config.assignment_expr_compare_call
+        )
+        self.conf_assignment_expr_compare_call_func_names: tuple[str, ...] = (
+            self.linter.config.assignment_expr_compare_call_func_names
+        )
+
+        self.conf_assignment_expr_assign_not: bool = (
+            self.linter.config.assignment_expr_assign_not
+        )
+        self.conf_assignment_expr_assign_getitem: bool = (
+            self.linter.config.assignment_expr_assign_getitem
+        )
+        self.conf_assignment_expr_assign_annotation: bool = (
+            self.linter.config.assignment_expr_assign_annotation
+        )
+        self.conf_assignment_expr_assign_await: bool = (
+            self.linter.config.assignment_expr_assign_await
+        )
+        self.conf_assignment_expr_assign_ifexp: bool = (
+            self.linter.config.assignment_expr_assign_ifexp
+        )
+        self.conf_assignment_expr_assign_comprehension: bool = (
+            self.linter.config.assignment_expr_assign_comprehension
+        )
+        self.conf_assignment_expr_assign_lambda: bool = (
+            self.linter.config.assignment_expr_assign_lambda
+        )
+        self.conf_assignment_expr_assign_compare: bool = (
+            self.linter.config.assignment_expr_assign_compare
+        )
+        self.conf_assignment_expr_assign_boolop: bool = (
+            self.linter.config.assignment_expr_assign_boolop
+        )
+        self.conf_assignment_expr_assign_binop: bool = (
+            self.linter.config.assignment_expr_assign_binop
+        )
+        self.conf_assignment_expr_assign_call: bool = (
+            self.linter.config.assignment_expr_assign_call
+        )
+        self.conf_assignment_expr_assign_call_func_names: set[str] = set(
+            self.linter.config.assignment_expr_assign_call_func_names
+        )
+
+        self.conf_assignment_expr_assign_call_func_names_rgxs: tuple[
+            re.Pattern[str], ...
+        ] = self.linter.config.assignment_expr_assign_call_func_names_rgxs
 
     @only_required_for_messages("prefer-typing-namedtuple", "consider-math-not-float")
     def visit_call(self, node: nodes.Call) -> None:
@@ -257,10 +565,64 @@ class CodeStyleChecker(BaseChecker):
         """
         # Check if `node.test` contains a `Name` node
         match node.test:
-            case (
-                (nodes.Name() as node_name)
-                | nodes.UnaryOp(op="not", operand=nodes.Name() as node_name)
-                | nodes.Compare(left=nodes.Name() as node_name, ops=[_])
+            case nodes.Name() as node_name:
+                pass
+            case nodes.UnaryOp(
+                op="not", operand=nodes.Name() as node_name
+            ) if self.conf_assignment_expr_not:
+                pass
+            case nodes.Compare(left=nodes.Name() as node_name, ops=[_]) if (
+                # is None OR is not None
+                (
+                    self.conf_assignment_expr_compare_none
+                    and node.test.ops[0][0] in {"is", "is not"}
+                    and isinstance(node.test.ops[0][1], nodes.Const)
+                    and node.test.ops[0][1].value is None
+                )
+                # Constants and calls
+                or (
+                    (
+                        (
+                            self.conf_assignment_expr_compare_const
+                            and isinstance(
+                                node.test.ops[0][1],
+                                (nodes.Const, nodes.Name, nodes.Attribute),
+                            )
+                        )
+                        # For calls check name / attrname is in allow list
+                        or (
+                            self.conf_assignment_expr_compare_call
+                            and (
+                                len(self.conf_assignment_expr_compare_call_func_names)
+                                == 0
+                                or (
+                                    isinstance(node.test.ops[0][1], nodes.Call)
+                                    and (
+                                        (
+                                            isinstance(
+                                                node.test.ops[0][1].func,
+                                                nodes.Attribute,
+                                            )
+                                            and node.test.ops[0][1].func.attrname
+                                            in self.conf_assignment_expr_compare_call_func_names
+                                        )
+                                        or (
+                                            isinstance(
+                                                node.test.ops[0][1].func, nodes.Name
+                                            )
+                                            and node.test.ops[0][1].func.name
+                                            in self.conf_assignment_expr_compare_call_func_names
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                    and (
+                        node.test.ops[0][0] not in {"in", "not in"}
+                        or self.conf_assignment_expr_compare_in
+                    )
+                )
             ):
                 pass
             case _:
@@ -269,9 +631,10 @@ class CodeStyleChecker(BaseChecker):
         # Make sure the previous node is an assignment to the same name
         # used in `node.test`. Furthermore, ignore if assignment spans multiple lines.
         prev_sibling = node.previous_sibling()
-        if CodeStyleChecker._check_prev_sibling_to_if_stmt(
-            prev_sibling, node_name.name
-        ):
+        if self._check_prev_sibling_to_if_stmt(prev_sibling, node_name.name):
+            if not self._check_assignment_value(prev_sibling.value):
+                return
+
             # Check if match statement would be a better fit.
             # I.e. multiple ifs that test the same name.
             if CodeStyleChecker._check_ignore_assignment_expr_suggestion(
@@ -299,9 +662,8 @@ class CodeStyleChecker(BaseChecker):
                 args=(suggestion,),
             )
 
-    @staticmethod
     def _check_prev_sibling_to_if_stmt(
-        prev_sibling: nodes.NodeNG | None, name: str | None
+        self, prev_sibling: nodes.NodeNG | None, name: str | None
     ) -> TypeGuard[nodes.Assign | nodes.AnnAssign]:
         """Check if previous sibling is an assignment with the same name.
 
@@ -311,11 +673,80 @@ class CodeStyleChecker(BaseChecker):
             return False
 
         match prev_sibling:
-            case nodes.Assign(
-                targets=[nodes.AssignName(name=target_name)]
-            ) | nodes.AnnAssign(target=nodes.AssignName(name=target_name)):
-                return target_name == name and prev_sibling.value is not None
+            case nodes.Assign(targets=[nodes.AssignName(name=target_name)]):
+                return target_name == name  # type: ignore[no-any-return]
+            case nodes.AnnAssign(target=nodes.AssignName(name=target_name)):
+                return (
+                    target_name == name
+                    and prev_sibling.value is not None
+                    and self.conf_assignment_expr_assign_annotation
+                )
         return False
+
+    # pylint: disable-next=too-many-return-statements
+    def _check_assignment_value(
+        self, assign_value: nodes.NodeNG | None
+    ) -> TypeGuard[nodes.NodeNG]:
+        if isinstance(assign_value, (nodes.Const, nodes.Name, nodes.Attribute)):
+            return True
+        if isinstance(assign_value, nodes.UnaryOp):
+            return (
+                self.conf_assignment_expr_assign_not
+                and self._check_assignment_value(assign_value.operand)
+            )
+        if isinstance(assign_value, nodes.Subscript):
+            return self.conf_assignment_expr_assign_getitem
+        if isinstance(assign_value, nodes.Await):
+            return (
+                self.conf_assignment_expr_assign_await
+                and self._check_assignment_value(assign_value.value)
+            )
+        if isinstance(assign_value, nodes.IfExp):
+            return self.conf_assignment_expr_assign_ifexp
+        if isinstance(assign_value, nodes.ComprehensionScope):
+            return self.conf_assignment_expr_assign_comprehension
+        if isinstance(assign_value, nodes.Lambda):
+            return self.conf_assignment_expr_assign_lambda
+        if isinstance(assign_value, nodes.Compare):
+            return (
+                len(assign_value.ops) == 1 and self.conf_assignment_expr_assign_compare
+            )
+        if isinstance(assign_value, nodes.BoolOp):
+            return self.conf_assignment_expr_assign_boolop
+        if isinstance(assign_value, nodes.BinOp):
+            return self.conf_assignment_expr_assign_binop
+        if isinstance(assign_value, nodes.Call):
+            return self.conf_assignment_expr_assign_call and (
+                (
+                    len(self.conf_assignment_expr_assign_call_func_names) == 0
+                    and len(self.conf_assignment_expr_assign_call_func_names_rgxs) == 0
+                )
+                or (
+                    (
+                        isinstance(assign_value.func, nodes.Attribute)
+                        and (
+                            assign_value.func.attrname
+                            in self.conf_assignment_expr_assign_call_func_names
+                            or any(
+                                pattern.match(assign_value.func.attrname)
+                                for pattern in self.conf_assignment_expr_assign_call_func_names_rgxs
+                            )
+                        )
+                    )
+                    or (
+                        isinstance(assign_value.func, nodes.Name)
+                        and (
+                            assign_value.func.name
+                            in self.conf_assignment_expr_assign_call_func_names
+                            or any(
+                                pattern.match(assign_value.func.name)
+                                for pattern in self.conf_assignment_expr_assign_call_func_names_rgxs
+                            )
+                        )
+                    )
+                )
+            )
+        return True
 
     @staticmethod
     def _check_ignore_assignment_expr_suggestion(
