@@ -170,7 +170,8 @@ class CodeStyleChecker(BaseChecker):
                 "metavar": "<function_names>",
                 "help": (
                     "List of function names in tests to still suggest "
-                    "assignment expressions."
+                    "assignment expressions. Leave empty to allow all names, "
+                    "disable by setting ``assignment-expr-compare-call=False``."
                 ),
             },
         ),
