@@ -22,6 +22,7 @@ else:
     from typing_extensions import TypeGuard
 
 
+# pylint: disable-next=too-many-instance-attributes
 class CodeStyleChecker(BaseChecker):
     """Checkers that can improve code consistency.
 
@@ -175,6 +176,84 @@ class CodeStyleChecker(BaseChecker):
                 ),
             },
         ),
+        (
+            "assignment-expr-assign-not",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value begins with ``not``. "
+                    "Ie. for ``var = not some_value``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-getitem",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a __getitem__ call. "
+                    "Ie. for ``var = config[some_val]``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-annotation",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment is an annotated assignment. "
+                    "Ie. for ``var: int = some_function()``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-await",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value begins with an ``await``. "
+                    "Ie. for ``var = await some_function()``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-ifexp",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is an if expressions. "
+                    "Ie. for ``var = 2 if some_bool else 42``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-assign-comprehension",
+            {
+                "default": False,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the assignment value is a comprehension. "
+                    "Ie. for ``var = [x.attr for x in func()]``."
+                ),
+            },
+        ),
     )
 
     def open(self) -> None:
@@ -202,6 +281,25 @@ class CodeStyleChecker(BaseChecker):
         self.conf_assignment_expr_compare_call_func_names: Tuple[
             str, ...
         ] = self.config.assignment_expr_compare_call_func_names
+
+        self.conf_assignment_expr_assign_not: bool = (
+            self.config.assignment_expr_assign_not
+        )
+        self.conf_assignment_expr_assign_getitem: bool = (
+            self.config.assignment_expr_assign_getitem
+        )
+        self.conf_assignment_expr_assign_annotation: bool = (
+            self.config.assignment_expr_assign_annotation
+        )
+        self.conf_assignment_expr_assign_await: bool = (
+            self.config.assignment_expr_assign_await
+        )
+        self.conf_assignment_expr_assign_ifexp: bool = (
+            self.config.assignment_expr_assign_ifexp
+        )
+        self.conf_assignment_expr_assign_comprehension: bool = (
+            self.config.assignment_expr_assign_comprehension
+        )
 
     @only_required_for_messages("prefer-typing-namedtuple")
     def visit_call(self, node: nodes.Call) -> None:
@@ -377,9 +475,10 @@ class CodeStyleChecker(BaseChecker):
         # Make sure the previous node is an assignment to the same name
         # used in `node.test`. Furthermore, ignore if assignment spans multiple lines.
         prev_sibling = node.previous_sibling()
-        if CodeStyleChecker._check_prev_sibling_to_if_stmt(
-            prev_sibling, node_name.name
-        ):
+        if self._check_prev_sibling_to_if_stmt(prev_sibling, node_name.name):
+            if not self._check_assignment_value(prev_sibling.value):
+                return
+
             # Check if match statement would be a better fit.
             # I.e. multiple ifs that test the same name.
             if CodeStyleChecker._check_ignore_assignment_expr_suggestion(
@@ -407,9 +506,8 @@ class CodeStyleChecker(BaseChecker):
                 args=(suggestion,),
             )
 
-    @staticmethod
     def _check_prev_sibling_to_if_stmt(
-        prev_sibling: nodes.NodeNG | None, name: str | None
+        self, prev_sibling: nodes.NodeNG | None, name: str | None
     ) -> TypeGuard[nodes.Assign | nodes.AnnAssign]:
         """Check if previous sibling is an assignment with the same name.
 
@@ -429,9 +527,28 @@ class CodeStyleChecker(BaseChecker):
             isinstance(prev_sibling, nodes.AnnAssign)
             and isinstance(prev_sibling.target, nodes.AssignName)
             and prev_sibling.target.name == name
+            and prev_sibling.value is not None
+            and self.conf_assignment_expr_assign_annotation
         ):
             return True
         return False
+
+    def _check_assignment_value(
+        self, assign_value: Optional[nodes.NodeNG]
+    ) -> TypeGuard[nodes.NodeNG]:
+        if isinstance(assign_value, (nodes.Const, nodes.Name, nodes.Attribute)):
+            return True
+        if isinstance(assign_value, nodes.UnaryOp):
+            return self.conf_assignment_expr_assign_not
+        if isinstance(assign_value, nodes.Subscript):
+            return self.conf_assignment_expr_assign_getitem
+        if isinstance(assign_value, nodes.Await):
+            return self.conf_assignment_expr_assign_await
+        if isinstance(assign_value, nodes.IfExp):
+            return self.conf_assignment_expr_assign_ifexp
+        if isinstance(assign_value, nodes.ComprehensionScope):
+            return self.conf_assignment_expr_assign_comprehension
+        return True
 
     @staticmethod
     def _check_ignore_assignment_expr_suggestion(
