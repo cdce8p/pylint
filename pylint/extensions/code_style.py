@@ -244,7 +244,7 @@ class CodeStyleChecker(BaseChecker):
         (
             "assignment-expr-assign-comprehension",
             {
-                "default": False,
+                "default": True,
                 "type": "yn",
                 "metavar": "<y_or_n>",
                 "help": (
@@ -257,7 +257,7 @@ class CodeStyleChecker(BaseChecker):
         (
             "assignment-expr-assign-lambda",
             {
-                "default": False,
+                "default": True,
                 "type": "yn",
                 "metavar": "<y_or_n>",
                 "help": (
@@ -283,7 +283,7 @@ class CodeStyleChecker(BaseChecker):
         (
             "assignment-expr-assign-boolop",
             {
-                "default": False,
+                "default": True,
                 "type": "yn",
                 "metavar": "<y_or_n>",
                 "help": (
@@ -296,7 +296,7 @@ class CodeStyleChecker(BaseChecker):
         (
             "assignment-expr-assign-binop",
             {
-                "default": False,
+                "default": True,
                 "type": "yn",
                 "metavar": "<y_or_n>",
                 "help": (
@@ -309,7 +309,7 @@ class CodeStyleChecker(BaseChecker):
         (
             "assignment-expr-assign-call",
             {
-                "default": False,
+                "default": True,
                 "type": "yn",
                 "metavar": "<y_or_n>",
                 "help": (
@@ -653,13 +653,16 @@ class CodeStyleChecker(BaseChecker):
         if isinstance(assign_value, nodes.BinOp):
             return self.conf_assignment_expr_assign_binop
         if isinstance(assign_value, nodes.Call):
-            return len(self.conf_assignment_expr_assign_call_func_names) == 0 or (
-                isinstance(assign_value.func, nodes.Attribute)
-                and assign_value.func.attrname
-                in self.conf_assignment_expr_assign_call_func_names
-                or isinstance(assign_value.func, nodes.Name)
-                and assign_value.func.name
-                in self.conf_assignment_expr_assign_call_func_names
+            return self.conf_assignment_expr_assign_call and (
+                len(self.conf_assignment_expr_assign_call_func_names) == 0
+                or (
+                    isinstance(assign_value.func, nodes.Attribute)
+                    and assign_value.func.attrname
+                    in self.conf_assignment_expr_assign_call_func_names
+                    or isinstance(assign_value.func, nodes.Name)
+                    and assign_value.func.name
+                    in self.conf_assignment_expr_assign_call_func_names
+                )
             )
         return True
 
