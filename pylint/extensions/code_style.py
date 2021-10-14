@@ -96,6 +96,84 @@ class CodeStyleChecker(BaseChecker):
                 ),
             },
         ),
+        # Settings to customize assignment expression suggestions
+        (
+            "assignment-expr-not",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains a ``not``. Ie. for ``if not var: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-none",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains ``is None`` or ``is not None``. "
+                    "Ie. for ``if var is None: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-const",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains a constant, NAME, or ATTRIBUTE. "
+                    "Ie. for ``if var == 'Hello World': ...``, "
+                    "``if var == CONST: ...``, ``if var == x.attribute: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-in",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains an ``in`` or ``not in`` check. "
+                    "Ie. for ``if var in some_list: ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-call",
+            {
+                "default": True,
+                "type": "yn",
+                "metavar": "<y_or_n>",
+                "help": (
+                    "Should assignment expressions be suggested "
+                    "if the test contains a function call. "
+                    "Ie. for ``if var == some_func(): ...``."
+                ),
+            },
+        ),
+        (
+            "assignment-expr-compare-call-func-names",
+            {
+                "default": ("get", "len"),
+                "type": "csv",
+                "metavar": "<function_names>",
+                "help": (
+                    "List of function names in tests to still suggest "
+                    "assignment expressions."
+                ),
+            },
+        ),
     )
 
     def open(self) -> None:
@@ -106,6 +184,23 @@ class CodeStyleChecker(BaseChecker):
             self.linter.config.max_line_length_suggestions
             or self.linter.config.max_line_length
         )
+
+        self.conf_assignment_expr_not: bool = self.config.assignment_expr_not
+        self.conf_assignment_expr_compare_none: bool = (
+            self.config.assignment_expr_compare_none
+        )
+        self.conf_assignment_expr_compare_const: bool = (
+            self.config.assignment_expr_compare_const
+        )
+        self.conf_assignment_expr_compare_in: bool = (
+            self.config.assignment_expr_compare_in
+        )
+        self.conf_assignment_expr_compare_call: bool = (
+            self.config.assignment_expr_compare_call
+        )
+        self.conf_assignment_expr_compare_call_func_names: Tuple[
+            str, ...
+        ] = self.config.assignment_expr_compare_call_func_names
 
     @only_required_for_messages("prefer-typing-namedtuple")
     def visit_call(self, node: nodes.Call) -> None:
@@ -229,12 +324,46 @@ class CodeStyleChecker(BaseChecker):
             isinstance(node.test, nodes.UnaryOp)
             and node.test.op == "not"
             and isinstance(node.test.operand, nodes.Name)
+            and self.conf_assignment_expr_not
         ):
             node_name = node.test.operand
         elif (
+            # pylint: disable=too-many-boolean-expressions
             isinstance(node.test, nodes.Compare)
             and isinstance(node.test.left, nodes.Name)
             and len(node.test.ops) == 1
+            and (
+                # is None OR is not None
+                self.conf_assignment_expr_compare_none
+                and node.test.ops[0][0] in {"is", "is not"}
+                and isinstance(node.test.ops[0][1], nodes.Const)
+                and node.test.ops[0][1].value is None
+                # Constants and calls
+                or (
+                    self.conf_assignment_expr_compare_const
+                    and isinstance(
+                        node.test.ops[0][1], (nodes.Const, nodes.Name, nodes.Attribute)
+                    )
+                    # For calls check name / attrname is in allow list
+                    or self.conf_assignment_expr_compare_call
+                    and (
+                        len(self.conf_assignment_expr_compare_call_func_names) == 0
+                        or isinstance(node.test.ops[0][1], nodes.Call)
+                        and (
+                            isinstance(node.test.ops[0][1].func, nodes.Attribute)
+                            and node.test.ops[0][1].func.attrname
+                            in self.conf_assignment_expr_compare_call_func_names
+                            or isinstance(node.test.ops[0][1].func, nodes.Name)
+                            and node.test.ops[0][1].func.name
+                            in self.conf_assignment_expr_compare_call_func_names
+                        )
+                    )
+                )
+                and (
+                    node.test.ops[0][0] not in {"in", "not in"}
+                    or self.conf_assignment_expr_compare_in
+                )
+            )
         ):
             node_name = node.test.left
         else:
