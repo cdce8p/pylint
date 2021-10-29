@@ -636,7 +636,10 @@ class CodeStyleChecker(BaseChecker):
         if isinstance(assign_value, (nodes.Const, nodes.Name, nodes.Attribute)):
             return True
         if isinstance(assign_value, nodes.UnaryOp):
-            return self.conf_assignment_expr_assign_not
+            return (
+                self.conf_assignment_expr_assign_not
+                and self._check_assignment_value(assign_value.operand)
+            )
         if isinstance(assign_value, nodes.Subscript):
             return self.conf_assignment_expr_assign_getitem
         if isinstance(assign_value, nodes.Await):
