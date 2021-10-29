@@ -640,7 +640,10 @@ class CodeStyleChecker(BaseChecker):
         if isinstance(assign_value, nodes.Subscript):
             return self.conf_assignment_expr_assign_getitem
         if isinstance(assign_value, nodes.Await):
-            return self.conf_assignment_expr_assign_await
+            return (
+                self.conf_assignment_expr_assign_await
+                and self._check_assignment_value(assign_value.value)
+            )
         if isinstance(assign_value, nodes.IfExp):
             return self.conf_assignment_expr_assign_ifexp
         if isinstance(assign_value, nodes.ComprehensionScope):
