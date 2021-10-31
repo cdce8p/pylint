@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import TYPE_CHECKING, Tuple, Type, cast
 
@@ -332,6 +333,19 @@ class CodeStyleChecker(BaseChecker):
                 ),
             },
         ),
+        (
+            "assignment-expr-assign-call-func-names-rgxs",
+            {
+                "default": (),
+                "type": "regexp_csv",
+                "metavar": "<function_names>",
+                "help": (
+                    "List of function name regex in assignment values to still suggest "
+                    "assignment expressions. Leave empty to allow all names, "
+                    "disable by setting ``assignment-expr-assign-call=False``."
+                ),
+            },
+        ),
     )
 
     def open(self) -> None:
@@ -393,9 +407,13 @@ class CodeStyleChecker(BaseChecker):
         self.conf_assignment_expr_assign_call: bool = (
             self.config.assignment_expr_assign_call
         )
-        self.conf_assignment_expr_assign_call_func_names: Tuple[
-            str, ...
-        ] = self.config.assignment_expr_assign_call_func_names
+        self.conf_assignment_expr_assign_call_func_names: Set[str] = set(
+            self.config.assignment_expr_assign_call_func_names
+        )
+
+        self.conf_assignment_expr_assign_call_func_names_rgxs: Tuple[
+            re.Pattern
+        ] = self.config.assignment_expr_assign_call_func_names_rgxs
 
     @only_required_for_messages("prefer-typing-namedtuple")
     def visit_call(self, node: nodes.Call) -> None:
@@ -661,13 +679,26 @@ class CodeStyleChecker(BaseChecker):
         if isinstance(assign_value, nodes.Call):
             return self.conf_assignment_expr_assign_call and (
                 len(self.conf_assignment_expr_assign_call_func_names) == 0
+                and len(self.conf_assignment_expr_assign_call_func_names_rgxs) == 0
                 or (
                     isinstance(assign_value.func, nodes.Attribute)
-                    and assign_value.func.attrname
-                    in self.conf_assignment_expr_assign_call_func_names
+                    and (
+                        assign_value.func.attrname
+                        in self.conf_assignment_expr_assign_call_func_names
+                        or any(
+                            pattern.match(assign_value.func.attrname)
+                            for pattern in self.conf_assignment_expr_assign_call_func_names_rgxs
+                        )
+                    )
                     or isinstance(assign_value.func, nodes.Name)
-                    and assign_value.func.name
-                    in self.conf_assignment_expr_assign_call_func_names
+                    and (
+                        assign_value.func.name
+                        in self.conf_assignment_expr_assign_call_func_names
+                        or any(
+                            pattern.match(assign_value.func.name)
+                            for pattern in self.conf_assignment_expr_assign_call_func_names_rgxs
+                        )
+                    )
                 )
             )
         return True
