@@ -1,0 +1,8 @@
+# Docker run
+# https://docs.docker.com/engine/reference/commandline/run/
+
+# Python images
+# https://hub.docker.com/_/python?tab=description
+
+# docker run -it --rm python:3.7.0 /bin/bash
+# docker run -it --rm python:3.10 python -c "print('Hello World')"
