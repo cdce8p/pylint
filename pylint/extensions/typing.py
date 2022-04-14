@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, NamedTuple
 
 import astroid.bases
@@ -13,6 +14,7 @@ from pylint.checkers import BaseChecker
 from pylint.checkers.utils import (
     check_messages,
     in_type_checking_block,
+    is_node_in_guarded_import_block,
     is_node_in_type_annotation_context,
     is_postponed_evaluation_enabled,
     safe_infer,
@@ -84,6 +86,78 @@ TYPING_NORETURN = frozenset(
 )
 
 
+class AddedTypingNames(NamedTuple):
+    version: tuple[int, int, int]
+    names: tuple[str, ...]
+
+
+NEW_TYPING_NAMES: tuple[AddedTypingNames, ...] = (
+    AddedTypingNames((3, 6, 1), ("ChainMap", "Counter", "Deque", "AsyncGenerator")),
+    AddedTypingNames(
+        (3, 6, 2),
+        (
+            "NoReturn",
+            "AsyncContextManager",
+        ),
+    ),
+    AddedTypingNames((3, 7, 2), ("OrderedDict",)),
+    AddedTypingNames((3, 7, 4), ("ForwardRef",)),
+    AddedTypingNames(
+        (3, 8, 0),
+        (
+            "Literal",
+            "Final",
+            "Protocol",
+            "runtime_checkable",
+            "TypedDict",
+            "SupportsIndex",
+            "final",
+            "get_origin",
+        ),
+    ),
+    AddedTypingNames((3, 9, 0), ("Annotated",)),
+    AddedTypingNames(
+        (3, 10, 0),
+        (
+            "TypeAlias",
+            "Concatenate",
+            "TypeGuard",
+            "ParamSpec",
+            "ParamSpecArgs",
+            "ParamSpecKwargs",
+            "is_typeddict",
+        ),
+    ),
+)
+
+NEW_TYPING_NAMES_2: dict[str, tuple[int, ...]] = {
+    "ChainMap": (3, 6, 1),
+    "Counter": (3, 6, 1),
+    "Deque": (3, 6, 1),
+    "AsyncGenerator": (3, 6, 1),
+    "NoReturn": (3, 6, 2),
+    "AsyncContextManager": (3, 6, 2),
+    "OrderedDict": (3, 7, 2),
+    "ForwardRef": (3, 7, 4),
+    "Literal": (3, 8, 0),
+    "Final": (3, 8, 0),
+    "Protocol": (3, 8, 0),
+    "runtime_checkable": (3, 8, 0),
+    "TypedDict": (3, 8, 0),
+    "SupportsIndex": (3, 8, 0),
+    "final": (3, 8, 0),
+    "get_origin": (3, 8, 0),
+    "Annotated": (3, 9, 0),
+    "TypeAlias": (3, 10, 0),
+    "Concatenate": (3, 10, 0),
+    "TypeGuard": (3, 10, 0),
+    "ParamSpec": (3, 10, 0),
+    "ParamSpecArgs": (3, 10, 0),
+    "ParamSpecKwargs": (3, 10, 0),
+    "is_typeddict": (3, 10, 0),
+}
+
+
 class DeprecatedTypingAliasMsg(NamedTuple):
     node: nodes.Name | nodes.Attribute
     qname: str
@@ -131,6 +205,11 @@ class TypingChecker(BaseChecker):
             "``collections.abc.Callable`` inside Optional and Union is broken in "
             "Python 3.9.0 and 3.9.1. Use ``typing.Callable`` for these cases instead. "
             "https://bugs.python.org/issue42965",
+        ),
+        "R6006": (
+            "",
+            "typing-import-unavailable",
+            "",
         ),
     }
     options = (
@@ -186,6 +265,16 @@ class TypingChecker(BaseChecker):
 
         self._should_check_noreturn = py_version < (3, 7, 2)
         self._should_check_callable = py_version < (3, 9, 2)
+
+        # self._unavailable_typing_names = set()
+        # for version, names in sorted(
+        #     NEW_TYPING_NAMES, key=lambda x: x.version, reverse=True
+        # ):
+        #     if py_version > version:
+        #         break
+        #     self._unavailable_typing_names.update(names)
+
+        self._unavailable_typing = {name: version for name, version in NEW_TYPING_NAMES_2.items() if version > py_version}
 
     def _msg_postponed_eval_hint(self, node: nodes.NodeNG) -> str:
         """Message hint if postponed evaluation isn't enabled."""
@@ -307,6 +396,21 @@ class TypingChecker(BaseChecker):
                 isinstance(node.parent, nodes.Subscript),
             )
         )
+
+    def visit_importfrom(self, node: nodes.ImportFrom) -> None:
+        if node.modname == "typing":
+            import_names: Iterator[str] = (name for name, _ in node.names)
+            for name in import_names:
+                version_new = self._unavailable_typing.get(name)
+                if version_new is None:
+                    continue
+                # if name not in self._unavailable_typing_names:
+                #     continue
+                if is_node_in_guarded_import_block(node):
+                    continue
+                print(f"'{name}' is not available in all supported versions. {version_new}")
+
+        # print(self._unavailable_typing_names)
 
     @check_messages("consider-using-alias")
     def leave_module(self, node: nodes.Module) -> None:
