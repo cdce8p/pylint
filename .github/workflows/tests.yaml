@@ -194,7 +194,7 @@ jobs:
         run: >-
           echo "key=venv-${{ env.CACHE_VERSION }}-${{
             hashFiles('setup.cfg', 'requirements_test_min.txt')
-          }}" >> $GITHUB_OUTPUT
+          }}" >> $env:GITHUB_OUTPUT
       - name: Test
         run: |
           echo "$GITHUB_OUTPUT"
