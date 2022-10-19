@@ -1102,7 +1102,9 @@ accessed. Python regular expressions are accepted.",
                 return
 
             try:
+                print(node.attrname)
                 attr_nodes = owner.getattr(node.attrname)
+                print(attr_nodes)
             except AttributeError:
                 continue
             except astroid.DuplicateBasesError:
@@ -1115,6 +1117,7 @@ accessed. Python regular expressions are accepted.",
                 # but we continue to the next values which doesn't have the
                 # attribute, then we'll have a false positive.
                 # So call this only after the call has been made.
+                print("-> astroid.NotFoundError")
                 if not _emit_no_member(
                     node,
                     owner,
