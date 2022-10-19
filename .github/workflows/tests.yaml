@@ -197,6 +197,7 @@ jobs:
           }}" >> $GITHUB_OUTPUT
       - name: Test
         run: |
+          echo "$GITHUB_OUTPUT"
           echo "${{ toJSON(steps.generate-python-key.outputs) }}"
           echo "${{ steps.generate-python-key.outputs.key }}"
       - name: Restore Python virtual environment
