@@ -57,6 +57,7 @@ jobs:
       - name: Run pytest
         run: |
           . venv/bin/activate
+          pip install -U git+https://github.com/cdce8p/astroid.git@dev-debug
           pytest --durations=10 --benchmark-disable --cov --cov-report= tests/test_functional.py -k regression_no_member_7631 -vv
       # - name: Run functional tests with minimal messages config
       #   run: |
@@ -214,12 +215,14 @@ jobs:
       - name: Run pytest
         run: |
           . venv\\Scripts\\activate
+          pip install -U git+https://github.com/cdce8p/astroid.git@dev-debug
           pytest --durations=10 --benchmark-disable tests/test_functional.py -k regression_no_member_7631 -vv
 
   tests-macos:
     name: run / ${{ matrix.python-version }} / macOS
     runs-on: macos-latest
     timeout-minutes: 25
+    if: false
     # needs: tests-linux
     strategy:
       fail-fast: false
@@ -266,6 +269,7 @@ jobs:
     name: run / ${{ matrix.python-version }} / Linux
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    if: false
     strategy:
       fail-fast: false
       matrix:
