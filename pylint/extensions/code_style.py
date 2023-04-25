@@ -357,63 +357,63 @@ class CodeStyleChecker(BaseChecker):
             or self.linter.config.max_line_length
         )
 
-        self.conf_assignment_expr_not: bool = self.config.assignment_expr_not
+        self.conf_assignment_expr_not: bool = self.linter.config.assignment_expr_not
         self.conf_assignment_expr_compare_none: bool = (
-            self.config.assignment_expr_compare_none
+            self.linter.config.assignment_expr_compare_none
         )
         self.conf_assignment_expr_compare_const: bool = (
-            self.config.assignment_expr_compare_const
+            self.linter.config.assignment_expr_compare_const
         )
         self.conf_assignment_expr_compare_in: bool = (
-            self.config.assignment_expr_compare_in
+            self.linter.config.assignment_expr_compare_in
         )
         self.conf_assignment_expr_compare_call: bool = (
-            self.config.assignment_expr_compare_call
+            self.linter.config.assignment_expr_compare_call
         )
-        self.conf_assignment_expr_compare_call_func_names: Tuple[
+        self.conf_assignment_expr_compare_call_func_names: tuple[
             str, ...
-        ] = self.config.assignment_expr_compare_call_func_names
+        ] = self.linter.config.assignment_expr_compare_call_func_names
 
         self.conf_assignment_expr_assign_not: bool = (
-            self.config.assignment_expr_assign_not
+            self.linter.config.assignment_expr_assign_not
         )
         self.conf_assignment_expr_assign_getitem: bool = (
-            self.config.assignment_expr_assign_getitem
+            self.linter.config.assignment_expr_assign_getitem
         )
         self.conf_assignment_expr_assign_annotation: bool = (
-            self.config.assignment_expr_assign_annotation
+            self.linter.config.assignment_expr_assign_annotation
         )
         self.conf_assignment_expr_assign_await: bool = (
-            self.config.assignment_expr_assign_await
+            self.linter.config.assignment_expr_assign_await
         )
         self.conf_assignment_expr_assign_ifexp: bool = (
-            self.config.assignment_expr_assign_ifexp
+            self.linter.config.assignment_expr_assign_ifexp
         )
         self.conf_assignment_expr_assign_comprehension: bool = (
-            self.config.assignment_expr_assign_comprehension
+            self.linter.config.assignment_expr_assign_comprehension
         )
         self.conf_assignment_expr_assign_lambda: bool = (
-            self.config.assignment_expr_assign_lambda
+            self.linter.config.assignment_expr_assign_lambda
         )
         self.conf_assignment_expr_assign_compare: bool = (
-            self.config.assignment_expr_assign_compare
+            self.linter.config.assignment_expr_assign_compare
         )
         self.conf_assignment_expr_assign_boolop: bool = (
-            self.config.assignment_expr_assign_boolop
+            self.linter.config.assignment_expr_assign_boolop
         )
         self.conf_assignment_expr_assign_binop: bool = (
-            self.config.assignment_expr_assign_binop
+            self.linter.config.assignment_expr_assign_binop
         )
         self.conf_assignment_expr_assign_call: bool = (
-            self.config.assignment_expr_assign_call
+            self.linter.config.assignment_expr_assign_call
         )
-        self.conf_assignment_expr_assign_call_func_names: Set[str] = set(
-            self.config.assignment_expr_assign_call_func_names
+        self.conf_assignment_expr_assign_call_func_names: set[str] = set(
+            self.linter.config.assignment_expr_assign_call_func_names
         )
 
-        self.conf_assignment_expr_assign_call_func_names_rgxs: Tuple[
-            re.Pattern
-        ] = self.config.assignment_expr_assign_call_func_names_rgxs
+        self.conf_assignment_expr_assign_call_func_names_rgxs: tuple[
+            re.Pattern[str]
+        ] = self.linter.config.assignment_expr_assign_call_func_names_rgxs
 
     @only_required_for_messages("prefer-typing-namedtuple")
     def visit_call(self, node: nodes.Call) -> None:
@@ -646,7 +646,7 @@ class CodeStyleChecker(BaseChecker):
 
     # pylint: disable-next=too-many-return-statements
     def _check_assignment_value(
-        self, assign_value: Optional[nodes.NodeNG]
+        self, assign_value: nodes.NodeNG | None
     ) -> TypeGuard[nodes.NodeNG]:
         if isinstance(assign_value, (nodes.Const, nodes.Name, nodes.Attribute)):
             return True
