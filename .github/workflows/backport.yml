@@ -6,9 +6,10 @@ on:
       - labeled
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  # actions: write
+  # contents: write
+  # pull-requests: write
+  contents: read
 
 jobs:
   backport:
