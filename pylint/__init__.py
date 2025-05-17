@@ -11,6 +11,7 @@ __all__ = [
     "run_pyreverse",
     "run_symilar",
     "version",
+    # some new comment
 ]
 
 import os
