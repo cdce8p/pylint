@@ -7,9 +7,8 @@ on:
 
 permissions:
   # actions: write
-  # contents: write
+  contents: write # push to github
   # pull-requests: write
-  contents: read
 
 jobs:
   backport:
