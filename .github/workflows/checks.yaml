@@ -16,6 +16,8 @@ env:
   DEFAULT_PYTHON: "3.13"
   PRE_COMMIT_CACHE: ~/.cache/pre-commit
 
+# Some new comment
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -148,6 +150,7 @@ jobs:
       - name: Run spelling checks
         run: |
           . venv/bin/activate
+          pip install .
           pytest tests/ -k unittest_spelling
 
   documentation:
