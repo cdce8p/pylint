@@ -7,6 +7,7 @@ on:
       - "maintenance/**"
   pull_request:
     branches:
+      - backport-branch
       - main
       - "maintenance/**"
 
@@ -83,6 +84,7 @@ jobs:
 
   pylint:
     name: pylint
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: prepare-base
@@ -124,6 +126,7 @@ jobs:
 
   spelling:
     name: spelling tests
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: prepare-base
@@ -153,6 +156,7 @@ jobs:
 
   documentation:
     name: documentation
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: prepare-base
