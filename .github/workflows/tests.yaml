@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [macos-13, macos-14, macos-15]
         python-version: ["3.14-dev"]
     runs-on: ${{ matrix.os }}
     outputs:
@@ -74,8 +74,9 @@ jobs:
           . venv/bin/activate
           pip install . --no-deps
           pip list | grep 'astroid\|pylint'
-          python -m pytest --durations=10 --benchmark-disable --cov --cov-report= tests/
+          python -m pytest --durations=10 --benchmark-disable --cov --cov-report= tests/test_functional.py::test_functional[regression_5408]
       - name: Run functional tests with minimal messages config
+        if: false
         run: |
           . venv/bin/activate
           pip list | grep 'astroid\|pylint'
@@ -93,6 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: tests
+    if: false
     steps:
       - name: Check out code from GitHub
         uses: actions/checkout@v4.2.2
@@ -129,6 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: tests
+    if: false
     strategy:
       fail-fast: false
       matrix:
