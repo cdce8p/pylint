@@ -32,8 +32,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13, macos-14, macos-15]
-        python-version: ["3.14-dev"]
+        os: [macos-15]
+        python-version:
+          - "3.13.6"
+          - "3.14.0-alpha.6"
+          - "3.14.0-alpha.7"
+          - "3.14.0-beta.1"
+          - "3.14.0-rc.1"
     runs-on: ${{ matrix.os }}
     outputs:
       python-key: ${{ steps.generate-python-key.outputs.key }}
