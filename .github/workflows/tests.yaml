@@ -82,6 +82,8 @@ jobs:
         run: |
           . venv/bin/activate
           pip install . --no-deps
+          python -VV
+          clang -v
           pip list | grep 'astroid\|pylint'
           python -m pytest tests/test_functional.py::test_functional[regression_5408]
       - name: Run pytest
