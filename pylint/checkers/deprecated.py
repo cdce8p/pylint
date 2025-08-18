@@ -251,13 +251,12 @@ class DeprecatedMixin(BaseChecker):
         if not isinstance(inferred, ACCEPTABLE_NODES):
             return
 
-        if isinstance(node.func, nodes.Attribute):
-            func_name = node.func.attrname
-        elif isinstance(node.func, nodes.Name):
-            func_name = node.func.name
-        else:
-            # Not interested in other nodes.
-            return
+        match node.func:
+            case nodes.Attribute(attrname=n) | nodes.Name(name=n):
+                func_name = n
+            case _:
+                # Not interested in other nodes.
+                return
 
         qnames = {inferred.qname(), func_name}
         if any(name in self.deprecated_methods() for name in qnames):
@@ -290,9 +289,6 @@ class DeprecatedMixin(BaseChecker):
 
     def check_deprecated_class_in_call(self, node: nodes.Call) -> None:
         """Checks if call the deprecated class."""
-        if isinstance(node.func, nodes.Attribute) and isinstance(
-            node.func.expr, nodes.Name
-        ):
-            mod_name = node.func.expr.name
-            class_name = node.func.attrname
-            self.check_deprecated_class(node, mod_name, (class_name,))
+        match node.func:
+            case nodes.Attribute(expr=nodes.Name(name=mod_name), attrname=class_name):
+                self.check_deprecated_class(node, mod_name, (class_name,))

@@ -257,66 +257,84 @@ class SpecialMethodsChecker(BaseChecker):
         if SpecialMethodsChecker._is_wrapped_type(node, "int"):
             return True
 
-        return isinstance(node, nodes.Const) and isinstance(node.value, int)
+        match node:
+            case nodes.Const(value=int()):
+                return True
+        return False
 
     @staticmethod
     def _is_str(node: InferenceResult) -> bool:
         if SpecialMethodsChecker._is_wrapped_type(node, "str"):
             return True
 
-        return isinstance(node, nodes.Const) and isinstance(node.value, str)
+        match node:
+            case nodes.Const(value=str()):
+                return True
+        return False
 
     @staticmethod
     def _is_bool(node: InferenceResult) -> bool:
         if SpecialMethodsChecker._is_wrapped_type(node, "bool"):
             return True
 
-        return isinstance(node, nodes.Const) and isinstance(node.value, bool)
+        match node:
+            case nodes.Const(value=bool()):
+                return True
+        return False
 
     @staticmethod
     def _is_bytes(node: InferenceResult) -> bool:
         if SpecialMethodsChecker._is_wrapped_type(node, "bytes"):
             return True
 
-        return isinstance(node, nodes.Const) and isinstance(node.value, bytes)
+        match node:
+            case nodes.Const(value=bytes()):
+                return True
+        return False
 
     @staticmethod
     def _is_tuple(node: InferenceResult) -> bool:
         if SpecialMethodsChecker._is_wrapped_type(node, "tuple"):
             return True
 
-        return isinstance(node, nodes.Const) and isinstance(node.value, tuple)
+        match node:
+            case nodes.Const(value=tuple()):
+                return True
+        return False
 
     @staticmethod
     def _is_dict(node: InferenceResult) -> bool:
         if SpecialMethodsChecker._is_wrapped_type(node, "dict"):
             return True
 
-        return isinstance(node, nodes.Const) and isinstance(node.value, dict)
+        match node:
+            case nodes.Const(value=dict()):
+                return True
+        return False
 
     @staticmethod
     def _is_iterator(node: InferenceResult) -> bool:
-        if isinstance(node, bases.Generator):
-            # Generators can be iterated.
-            return True
-        if isinstance(node, nodes.ComprehensionScope):
-            # Comprehensions can be iterated.
-            return True
-
-        if isinstance(node, bases.Instance):
-            try:
-                node.local_attr(NEXT_METHOD)
+        match node:
+            case bases.Generator():
+                # Generators can be iterated.
                 return True
-            except astroid.NotFoundError:
-                pass
-        elif isinstance(node, nodes.ClassDef):
-            metaclass = node.metaclass()
-            if metaclass and isinstance(metaclass, nodes.ClassDef):
+            case nodes.ComprehensionScope():
+                # Comprehensions can be iterated.
+                return True
+            case bases.Instance():
                 try:
-                    metaclass.local_attr(NEXT_METHOD)
+                    node.local_attr(NEXT_METHOD)
                     return True
                 except astroid.NotFoundError:
                     pass
+            case nodes.ClassDef():
+                metaclass = node.metaclass()
+                if metaclass and isinstance(metaclass, nodes.ClassDef):
+                    try:
+                        metaclass.local_attr(NEXT_METHOD)
+                        return True
+                    except astroid.NotFoundError:
+                        pass
         return False
 
     def _check_iter(self, node: nodes.FunctionDef, inferred: InferenceResult) -> None:

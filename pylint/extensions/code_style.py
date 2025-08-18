@@ -131,20 +131,19 @@ class CodeStyleChecker(BaseChecker):
 
     def _check_dict_consider_namedtuple_dataclass(self, node: nodes.Dict) -> None:
         """Check if dictionary values can be replaced by Namedtuple or Dataclass."""
-        if not (
-            (
-                isinstance(node.parent, (nodes.Assign, nodes.AnnAssign))
-                and isinstance(node.parent.parent, nodes.Module)
-            )
-            or (
-                isinstance(node.parent, nodes.AnnAssign)
-                and isinstance(node.parent.target, nodes.AssignName)
-                and utils.is_assign_name_annotated_with(node.parent.target, "Final")
-            )
-        ):
-            # If dict is not part of an 'Assign' or 'AnnAssign' node in
-            # a module context OR 'AnnAssign' with 'Final' annotation, skip check.
-            return
+        match node.parent:
+            case nodes.Assign(parent=nodes.Module()) | nodes.AnnAssign(
+                parent=nodes.Module()
+            ):
+                pass
+            case nodes.AnnAssign(
+                target=nodes.AssignName() as t
+            ) if utils.is_assign_name_annotated_with(t, "Final"):
+                pass
+            case _:
+                # If dict is not part of an 'Assign' or 'AnnAssign' node in
+                # a module context OR 'AnnAssign' with 'Final' annotation, skip check.
+                return
 
         # All dict_values are itself dict nodes
         if len(node.items) > 1 and all(
@@ -220,23 +219,15 @@ class CodeStyleChecker(BaseChecker):
         Note: Assignment expressions were added in Python 3.8
         """
         # Check if `node.test` contains a `Name` node
-        node_name: nodes.Name | None = None
-        if isinstance(node.test, nodes.Name):
-            node_name = node.test
-        elif (
-            isinstance(node.test, nodes.UnaryOp)
-            and node.test.op == "not"
-            and isinstance(node.test.operand, nodes.Name)
-        ):
-            node_name = node.test.operand
-        elif (
-            isinstance(node.test, nodes.Compare)
-            and isinstance(node.test.left, nodes.Name)
-            and len(node.test.ops) == 1
-        ):
-            node_name = node.test.left
-        else:
-            return
+        match node.test:
+            case (
+                (nodes.Name() as n)
+                | nodes.UnaryOp(op="not", operand=nodes.Name() as n)
+                | nodes.Compare(left=nodes.Name() as n, ops=[_])
+            ):
+                node_name = n
+            case _:
+                return
 
         # Make sure the previous node is an assignment to the same name
         # used in `node.test`. Furthermore, ignore if assignment spans multiple lines.
@@ -282,19 +273,11 @@ class CodeStyleChecker(BaseChecker):
         if prev_sibling is None or prev_sibling.tolineno - prev_sibling.fromlineno != 0:
             return False
 
-        if (
-            isinstance(prev_sibling, nodes.Assign)
-            and len(prev_sibling.targets) == 1
-            and isinstance(prev_sibling.targets[0], nodes.AssignName)
-            and prev_sibling.targets[0].name == name
-        ):
-            return True
-        if (
-            isinstance(prev_sibling, nodes.AnnAssign)
-            and isinstance(prev_sibling.target, nodes.AssignName)
-            and prev_sibling.target.name == name
-        ):
-            return True
+        match prev_sibling:
+            case nodes.Assign(targets=[nodes.AssignName(name=n)]) | nodes.AnnAssign(
+                target=nodes.AssignName(name=n)
+            ) if (n == name):
+                return True
         return False
 
     @staticmethod
@@ -309,42 +292,33 @@ class CodeStyleChecker(BaseChecker):
         if isinstance(node.test, nodes.Compare):
             next_if_node: nodes.If | None = None
             next_sibling = node.next_sibling()
-            if len(node.orelse) == 1 and isinstance(node.orelse[0], nodes.If):
-                # elif block
-                next_if_node = node.orelse[0]
-            elif isinstance(next_sibling, nodes.If):
-                # separate if block
-                next_if_node = next_sibling
+            match (node.orelse, next_sibling):
+                case [[nodes.If() as i], _]:
+                    # elif block
+                    next_if_node = i
+                case [_, nodes.If() as i]:
+                    # separate if block
+                    next_if_node = i
 
-            if (  # pylint: disable=too-many-boolean-expressions
-                next_if_node is not None
-                and (
-                    (
-                        isinstance(next_if_node.test, nodes.Compare)
-                        and isinstance(next_if_node.test.left, nodes.Name)
-                        and next_if_node.test.left.name == name
-                    )
-                    or (
-                        isinstance(next_if_node.test, nodes.Name)
-                        and next_if_node.test.name == name
-                    )
-                )
-            ):
-                return True
+            match next_if_node:
+                case nodes.If(
+                    test=nodes.Compare(left=nodes.Name(name=n)) | (nodes.Name(name=n))
+                ) if (n == name):
+                    return True
         return False
 
     @only_required_for_messages("consider-using-augmented-assign")
     def visit_assign(self, node: nodes.Assign) -> None:
-        is_aug, op = utils.is_augmented_assign(node)
-        if is_aug:
-            self.add_message(
-                "consider-using-augmented-assign",
-                args=f"{op}=",
-                node=node,
-                line=node.lineno,
-                col_offset=node.col_offset,
-                confidence=INFERENCE,
-            )
+        match utils.is_augmented_assign(node):
+            case [True, op]:
+                self.add_message(
+                    "consider-using-augmented-assign",
+                    args=f"{op}=",
+                    node=node,
+                    line=node.lineno,
+                    col_offset=node.col_offset,
+                    confidence=INFERENCE,
+                )
 
 
 def register(linter: PyLinter) -> None:

@@ -99,26 +99,24 @@ class RecommendationChecker(checkers.BaseChecker):
                 and (comparator in node.node_ancestors() or comparator is node)
             )
         ):
-            inferred = utils.safe_infer(node.func)
-            if not isinstance(inferred, astroid.BoundMethod) or not isinstance(
-                inferred.bound, nodes.Dict
-            ):
-                return
-            self.add_message(
-                "consider-iterating-dictionary", node=node, confidence=INFERENCE
-            )
+            match utils.safe_infer(node.func):
+                case astroid.BoundMethod(bound=nodes.Dict()):
+                    self.add_message(
+                        "consider-iterating-dictionary", node=node, confidence=INFERENCE
+                    )
 
     def _check_use_maxsplit_arg(self, node: nodes.Call) -> None:
         """Add message when accessing first or last elements of a str.split() or
         str.rsplit().
         """
         # Check if call is split() or rsplit()
-        if not (
-            isinstance(node.func, nodes.Attribute)
-            and node.func.attrname in {"split", "rsplit"}
-            and isinstance(utils.safe_infer(node.func), astroid.BoundMethod)
-        ):
-            return
+        match node.func:
+            case nodes.Attribute(attrname="split" | "rsplit") if isinstance(
+                utils.safe_infer(node.func), astroid.BoundMethod
+            ):
+                pass
+            case _:
+                return
         inferred_expr = utils.safe_infer(node.func.expr)
         if isinstance(inferred_expr, astroid.Instance) and any(
             inferred_expr.nodes_of_class(nodes.ClassDef)
@@ -213,15 +211,14 @@ class RecommendationChecker(checkers.BaseChecker):
             return
 
         # Is it a proper len call?
-        if not isinstance(node.iter.args[-1], nodes.Call):
-            return
-        second_func = node.iter.args[-1].func
-        if not self._is_builtin(second_func, "len"):
-            return
-        len_args = node.iter.args[-1].args
-        if not len_args or len(len_args) != 1:
-            return
-        iterating_object = len_args[0]
+        match node.iter.args:
+            case [
+                *_,
+                nodes.Call(func=second_func, args=[iterating_object]),
+            ] if self._is_builtin(second_func, "len"):
+                pass
+            case _:
+                return
         if isinstance(iterating_object, nodes.Name):
             expected_subscript_val_type = nodes.Name
         elif isinstance(iterating_object, nodes.Attribute):
@@ -230,12 +227,12 @@ class RecommendationChecker(checkers.BaseChecker):
             return
         # If we're defining __iter__ on self, enumerate won't work
         scope = node.scope()
-        if (
-            isinstance(iterating_object, nodes.Name)
-            and iterating_object.name == "self"
-            and scope.name == "__iter__"
-        ):
-            return
+        match (iterating_object, scope):
+            case [
+                nodes.Name(name="self"),
+                astroid.scoped_nodes.LocalsDictNodeNG(name="__iter__"),
+            ]:
+                return
 
         # Verify that the body of the for loop uses a subscript
         # with the object that was iterated. This uses some heuristics
@@ -438,10 +435,11 @@ class RecommendationChecker(checkers.BaseChecker):
                 return
 
             # If % applied to another type than str, it's modulo and can't be replaced by formatting
-            if not hasattr(node.parent.left, "value") or not isinstance(
-                node.parent.left.value, str
-            ):
-                return
+            match node.parent.left:
+                case object(value=str()):
+                    pass
+                case _:
+                    return
 
             # Brackets can be inconvenient in f-string expressions
             if "{" in node.parent.left.value or "}" in node.parent.left.value:
@@ -450,10 +448,9 @@ class RecommendationChecker(checkers.BaseChecker):
             inferred_right = utils.safe_infer(node.parent.right)
 
             # If dicts or lists of length > 1 are used
-            if isinstance(inferred_right, nodes.Dict) and len(inferred_right.items) > 1:
-                return
-            if isinstance(inferred_right, nodes.List) and len(inferred_right.elts) > 1:
-                return
+            match inferred_right:
+                case nodes.Dict(items=i) | nodes.List(elts=i) if len(i) > 1:
+                    return
 
             # If all tests pass, then raise message
             self.add_message(

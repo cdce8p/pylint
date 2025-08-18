@@ -846,16 +846,15 @@ def _is_property_decorator(decorator: nodes.Name) -> bool:
             returns: list[nodes.Return] = list(
                 inferred._get_return_nodes_skip_functions()
             )
-            if len(returns) == 1 and isinstance(
-                returns[0].value, (nodes.Name, nodes.Attribute)
-            ):
-                inferred = safe_infer(returns[0].value)
-                if (
-                    inferred
-                    and isinstance(inferred, astroid.objects.Property)
-                    and isinstance(inferred.function, nodes.FunctionDef)
-                ):
-                    return decorated_with_property(inferred.function)
+            match returns:
+                case [object(value=nodes.Name() | nodes.Attribute() as v)]:
+                    inferred = safe_infer(v)
+                    if (
+                        inferred
+                        and isinstance(inferred, astroid.objects.Property)
+                        and isinstance(inferred.function, nodes.FunctionDef)
+                    ):
+                        return decorated_with_property(inferred.function)
     return False
 
 
@@ -1005,14 +1004,15 @@ def find_except_wrapper_node_in_scope(
 ) -> nodes.ExceptHandler | None:
     """Return the ExceptHandler in which the node is, without going out of scope."""
     for current in node.node_ancestors():
-        if isinstance(current, astroid.scoped_nodes.LocalsDictNodeNG):
-            # If we're inside a function/class definition, we don't want to keep checking
-            # higher ancestors for `except` clauses, because if these exist, it means our
-            # function/class was defined in an `except` clause, rather than the current code
-            # actually running in an `except` clause.
-            return None
-        if isinstance(current, nodes.ExceptHandler):
-            return current
+        match current:
+            case astroid.scoped_nodes.LocalsDictNodeNG():
+                # If we're inside a function/class definition, we don't want to keep checking
+                # higher ancestors for `except` clauses, because if these exist, it means our
+                # function/class was defined in an `except` clause, rather than the current code
+                # actually running in an `except` clause.
+                return None
+            case nodes.ExceptHandler():
+                return current
     return None
 
 
@@ -1083,18 +1083,18 @@ def _suppresses_exception(
     if not isinstance(exception, str):
         exception = exception.__name__
     for arg in call.args:
-        inferred = safe_infer(arg)
-        if isinstance(inferred, nodes.ClassDef):
-            if inferred.name == exception:
-                return True
-        elif isinstance(inferred, nodes.Tuple):
-            for elt in inferred.elts:
-                inferred_elt = safe_infer(elt)
-                if (
-                    isinstance(inferred_elt, nodes.ClassDef)
-                    and inferred_elt.name == exception
-                ):
+        match inferred := safe_infer(arg):
+            case nodes.ClassDef():
+                if inferred.name == exception:
                     return True
+            case nodes.Tuple(elts=elts):
+                for elt in elts:
+                    inferred_elt = safe_infer(elt)
+                    if (
+                        isinstance(inferred_elt, nodes.ClassDef)
+                        and inferred_elt.name == exception
+                    ):
+                        return True
     return False
 
 
@@ -1266,32 +1266,30 @@ def is_inside_abstract_class(node: nodes.NodeNG) -> bool:
 def _supports_protocol(
     value: nodes.NodeNG, protocol_callback: Callable[[nodes.NodeNG], bool]
 ) -> bool:
-    if isinstance(value, nodes.ClassDef):
-        if not has_known_bases(value):
-            return True
-        # classobj can only be iterable if it has an iterable metaclass
-        meta = value.metaclass()
-        if meta is not None:
-            if protocol_callback(meta):
+    match value:
+        case nodes.ClassDef():
+            if not has_known_bases(value):
                 return True
-    if isinstance(value, astroid.BaseInstance):
-        if not has_known_bases(value):
-            return True
-        if value.has_dynamic_getattr():
-            return True
-        if protocol_callback(value):
+            # classobj can only be iterable if it has an iterable metaclass
+            meta = value.metaclass()
+            if meta is not None:
+                if protocol_callback(meta):
+                    return True
+        case astroid.BaseInstance():
+            if not has_known_bases(value):
+                return True
+            if value.has_dynamic_getattr():
+                return True
+            if protocol_callback(value):
+                return True
+
+        case nodes.ComprehensionScope():
             return True
 
-    if isinstance(value, nodes.ComprehensionScope):
-        return True
-
-    if (
-        isinstance(value, astroid.bases.Proxy)
-        and isinstance(value._proxied, astroid.BaseInstance)
-        and has_known_bases(value._proxied)
-    ):
-        value = value._proxied
-        return protocol_callback(value)
+        case astroid.bases.Proxy(
+            _proxied=astroid.BaseInstance() as p
+        ) if has_known_bases(p):
+            return protocol_callback(p)
 
     return False
 
@@ -1370,32 +1368,30 @@ def safe_infer(
     if not isinstance(value, util.UninferableBase):
         inferred_types.add(_get_python_type_of_node(value))
 
-    # pylint: disable = too-many-try-statements
     try:
         for inferred in infer_gen:
             inferred_type = _get_python_type_of_node(inferred)
             if inferred_type not in inferred_types:
                 return None  # If there is ambiguity on the inferred node.
-            if (
-                compare_constants
-                and isinstance(inferred, nodes.Const)
-                and isinstance(value, nodes.Const)
-                and inferred.value != value.value
-            ):
-                return None
-            if (
-                isinstance(inferred, nodes.FunctionDef)
-                and isinstance(value, nodes.FunctionDef)
-                and function_arguments_are_ambiguous(inferred, value)
-            ):
-                return None
-            if (
-                compare_constructors
-                and isinstance(inferred, nodes.ClassDef)
-                and isinstance(value, nodes.ClassDef)
-                and class_constructors_are_ambiguous(inferred, value)
-            ):
-                return None
+            match (compare_constants, compare_constructors, inferred, value):
+                case [True, _, nodes.Const(value=v1), nodes.Const(value=v2)] if (
+                    v1 != v2
+                ):
+                    return None
+                case [
+                    _,
+                    _,
+                    nodes.FunctionDef(),
+                    nodes.FunctionDef(),
+                ] if function_arguments_are_ambiguous(inferred, value):
+                    return None
+                case [
+                    _,
+                    True,
+                    nodes.ClassDef(),
+                    nodes.ClassDef(),
+                ] if class_constructors_are_ambiguous(inferred, value):
+                    return None
     except astroid.InferenceError:
         return None  # There is some kind of ambiguity
     except StopIteration:
@@ -1433,14 +1429,13 @@ def function_arguments_are_ambiguous(
         if len(zippable_default[0]) != len(zippable_default[1]):
             return True
         for default1, default2 in zip(*zippable_default):
-            if isinstance(default1, nodes.Const) and isinstance(default2, nodes.Const):
-                if default1.value != default2.value:
+            match (default1, default2):
+                case [nodes.Const(value=v1), nodes.Const(value=v2)]:
+                    return v1 != v2
+                case [nodes.Name(name=n1), nodes.Name(name=n2)]:
+                    return n1 != n2
+                case _:
                     return True
-            elif isinstance(default1, nodes.Name) and isinstance(default2, nodes.Name):
-                if default1.name != default2.name:
-                    return True
-            else:
-                return True
     return False
 
 
@@ -1481,11 +1476,10 @@ def has_known_bases(
 
 
 def is_none(node: nodes.NodeNG) -> bool:
-    return (
-        node is None
-        or (isinstance(node, nodes.Const) and node.value is None)
-        or (isinstance(node, nodes.Name) and node.name == "None")
-    )
+    match node:
+        case None | nodes.Const(value=None) | nodes.Name(value="None"):
+            return True
+    return False
 
 
 def node_type(node: nodes.NodeNG) -> SuccessfulInferenceResult | None:
@@ -1523,15 +1517,17 @@ def is_registered_in_singledispatch_function(node: nodes.FunctionDef) -> bool:
     for decorator in decorators:
         # func.register are function calls or register attributes
         # when the function is annotated with types
-        if isinstance(decorator, nodes.Call):
-            func = decorator.func
-        elif isinstance(decorator, nodes.Attribute):
-            func = decorator
-        else:
-            continue
+        match decorator:
+            case nodes.Call(func=func) | (nodes.Attribute() as func):
+                pass
+            case _:
+                continue
 
-        if not isinstance(func, nodes.Attribute) or func.attrname != "register":
-            continue
+        match func:
+            case nodes.Attribute(attrname="register"):
+                pass
+            case _:
+                continue
 
         try:
             func_def = next(func.expr.infer())
@@ -1547,15 +1543,17 @@ def is_registered_in_singledispatch_function(node: nodes.FunctionDef) -> bool:
 def find_inferred_fn_from_register(node: nodes.NodeNG) -> nodes.FunctionDef | None:
     # func.register are function calls or register attributes
     # when the function is annotated with types
-    if isinstance(node, nodes.Call):
-        func = node.func
-    elif isinstance(node, nodes.Attribute):
-        func = node
-    else:
-        return None
+    match node:
+        case nodes.Call(func=func) | (nodes.Attribute() as func):
+            pass
+        case _:
+            return None
 
-    if not isinstance(func, nodes.Attribute) or func.attrname != "register":
-        return None
+    match func:
+        case nodes.Attribute(attrname="register"):
+            pass
+        case _:
+            return None
 
     func_def = safe_infer(func.expr)
     if not isinstance(func_def, nodes.FunctionDef):
@@ -1587,19 +1585,20 @@ def get_node_last_lineno(node: nodes.NodeNG) -> int:
     but for a node that has child statements (e.g. a method) this will be the lineno of the last
     child statement recursively.
     """
-    # 'finalbody' is always the last clause in a try statement, if present
-    if getattr(node, "finalbody", False):
-        return get_node_last_lineno(node.finalbody[-1])
-    # For if, while, and for statements 'orelse' is always the last clause.
-    # For try statements 'orelse' is the last in the absence of a 'finalbody'
-    if getattr(node, "orelse", False):
-        return get_node_last_lineno(node.orelse[-1])
-    # try statements have the 'handlers' last if there is no 'orelse' or 'finalbody'
-    if getattr(node, "handlers", False):
-        return get_node_last_lineno(node.handlers[-1])
-    # All compound statements have a 'body'
-    if getattr(node, "body", False):
-        return get_node_last_lineno(node.body[-1])
+    match node:
+        case nodes.NodeNG(finalbody=[*_, n]):
+            # 'finalbody' is always the last clause in a try statement, if present
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(orelse=[*_, n]):
+            # For if, while, and for statements 'orelse' is always the last clause.
+            # For try statements 'orelse' is the last in the absence of a 'finalbody'
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(handlers=[*_, n]):
+            # try statements have the 'handlers' last if there is no 'orelse' or 'finalbody'
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(body=[*_, n]):
+            # All compound statements have a 'body'
+            return get_node_last_lineno(n)
     # Not a compound statement
     return node.lineno  # type: ignore[no-any-return]
 
@@ -1616,31 +1615,21 @@ def is_node_in_type_annotation_context(node: nodes.NodeNG) -> bool:
     Check for 'AnnAssign', function 'Arguments',
     or part of function return type annotation.
     """
-    # pylint: disable=too-many-boolean-expressions
     current_node, parent_node = node, node.parent
     while True:
-        if (
-            (
-                isinstance(parent_node, nodes.AnnAssign)
-                and parent_node.annotation == current_node
-            )
-            or (
-                isinstance(parent_node, nodes.Arguments)
-                and current_node
-                in (
-                    *parent_node.annotations,
-                    *parent_node.posonlyargs_annotations,
-                    *parent_node.kwonlyargs_annotations,
-                    parent_node.varargannotation,
-                    parent_node.kwargannotation,
-                )
-            )
-            or (
-                isinstance(parent_node, nodes.FunctionDef)
-                and parent_node.returns == current_node
-            )
-        ):
-            return True
+        match parent_node:
+            case nodes.AnnAssign(annotation=n) if n == current_node:
+                return True
+            case nodes.Arguments() if current_node in (
+                *parent_node.annotations,
+                *parent_node.posonlyargs_annotations,
+                *parent_node.kwonlyargs_annotations,
+                parent_node.varargannotation,
+                parent_node.kwargannotation,
+            ):
+                return True
+            case nodes.FunctionDef(returns=n) if n == current_node:
+                return True
         current_node, parent_node = parent_node, parent_node.parent
         if isinstance(parent_node, nodes.Module):
             return False
@@ -1708,11 +1697,10 @@ def is_protocol_class(cls: nodes.NodeNG) -> bool:
 
 def is_call_of_name(node: nodes.NodeNG, name: str) -> bool:
     """Checks if node is a function call with the given name."""
-    return (
-        isinstance(node, nodes.Call)
-        and isinstance(node.func, nodes.Name)
-        and node.func.name == name
-    )
+    match node:
+        case nodes.Call(func=nodes.Name(name=n)) if n == name:
+            return True
+    return False
 
 
 def is_test_condition(
@@ -1721,10 +1709,11 @@ def is_test_condition(
 ) -> bool:
     """Returns true if the given node is being tested for truthiness."""
     parent = parent or node.parent
-    if isinstance(parent, (nodes.While, nodes.If, nodes.IfExp, nodes.Assert)):
-        return node is parent.test or parent.test.parent_of(node)
-    if isinstance(parent, nodes.Comprehension):
-        return node in parent.ifs
+    match parent:
+        case nodes.While() | nodes.If() | nodes.IfExp() | nodes.Assert():
+            return node is parent.test or parent.test.parent_of(node)
+        case nodes.Comprehension():
+            return node in parent.ifs
     return is_call_of_name(parent, "bool") and parent.parent_of(node)
 
 
@@ -1741,21 +1730,13 @@ def is_attribute_typed_annotation(
     """Test if attribute is typed annotation in current node
     or any base nodes.
     """
-    attribute = node.locals.get(attr_name, [None])[0]
-    if (
-        attribute
-        and isinstance(attribute, nodes.AssignName)
-        and isinstance(attribute.parent, nodes.AnnAssign)
-    ):
-        return True
-    for base in node.bases:
-        inferred = safe_infer(base)
-        if (
-            inferred
-            and isinstance(inferred, nodes.ClassDef)
-            and is_attribute_typed_annotation(inferred, attr_name)
-        ):
+    match node.locals.get(attr_name, [None])[0]:
+        case nodes.AssignName(parent=nodes.AnnAssign()):
             return True
+    for base in node.bases:
+        match inferred := safe_infer(base):
+            case nodes.ClassDef() if is_attribute_typed_annotation(inferred, attr_name):
+                return True
     return False
 
 
@@ -1774,10 +1755,9 @@ def is_assign_name_annotated_with(node: nodes.AssignName, typing_name: str) -> b
     annotation = node.parent.annotation
     if isinstance(annotation, nodes.Subscript):
         annotation = annotation.value
-    if (isinstance(annotation, nodes.Name) and annotation.name == typing_name) or (
-        isinstance(annotation, nodes.Attribute) and annotation.attrname == typing_name
-    ):
-        return True
+    match annotation:
+        case nodes.Name(name=n) | nodes.Attribute(attrname=n) if n == typing_name:
+            return True
     return False
 
 
@@ -1789,15 +1769,12 @@ def get_iterating_dictionary_name(node: nodes.For | nodes.Comprehension) -> str 
     or a dictionary itself, this returns None.
     """
     # Is it a proper keys call?
-    if (
-        isinstance(node.iter, nodes.Call)
-        and isinstance(node.iter.func, nodes.Attribute)
-        and node.iter.func.attrname == "keys"
-    ):
-        inferred = safe_infer(node.iter.func)
-        if not isinstance(inferred, astroid.BoundMethod):
-            return None
-        return node.iter.as_string().rpartition(".keys")[0]  # type: ignore[no-any-return]
+    match node.iter:
+        case nodes.Call(func=nodes.Attribute(attrname="keys")):
+            inferred = safe_infer(node.iter.func)
+            if not isinstance(inferred, astroid.BoundMethod):
+                return None
+            return node.iter.as_string().rpartition(".keys")[0]  # type: ignore[no-any-return]
 
     # Is it a dictionary?
     if isinstance(node.iter, (nodes.Name, nodes.Attribute)):
@@ -1908,44 +1885,47 @@ def is_deleted_after_current(node: nodes.NodeNG, varname: str) -> bool:
 
 def is_function_body_ellipsis(node: nodes.FunctionDef) -> bool:
     """Checks whether a function body only consists of a single Ellipsis."""
-    return (
-        len(node.body) == 1
-        and isinstance(node.body[0], nodes.Expr)
-        and isinstance(node.body[0].value, nodes.Const)
-        and node.body[0].value.value == Ellipsis
-    )
+    match node.body:
+        case [nodes.Expr(value=nodes.Const(value=v))] if v is Ellipsis:
+            return True
+    return False
 
 
 def is_base_container(node: nodes.NodeNG | None) -> bool:
-    return isinstance(node, nodes.BaseContainer) and not node.elts
+    match node:
+        case nodes.BaseContainer(elts=[]):
+            return True
+    return False
 
 
 def is_empty_dict_literal(node: nodes.NodeNG | None) -> bool:
-    return isinstance(node, nodes.Dict) and not node.items
+    match node:
+        case nodes.Dict(items=[]):
+            return True
+    return False
 
 
 def is_empty_str_literal(node: nodes.NodeNG | None) -> bool:
-    return (
-        isinstance(node, nodes.Const) and isinstance(node.value, str) and not node.value
-    )
+    match node:
+        case nodes.Const(value=""):
+            return True
+    return False
 
 
 def returns_bool(node: nodes.NodeNG) -> bool:
     """Returns true if a node is a nodes.Return that returns a constant boolean."""
-    return (
-        isinstance(node, nodes.Return)
-        and isinstance(node.value, nodes.Const)
-        and isinstance(node.value.value, bool)
-    )
+    match node:
+        case nodes.Return(value=nodes.Const(value=bool())):
+            return True
+    return False
 
 
 def assigned_bool(node: nodes.NodeNG) -> bool:
     """Returns true if a node is a nodes.Assign that returns a constant boolean."""
-    return (
-        isinstance(node, nodes.Assign)
-        and isinstance(node.value, nodes.Const)
-        and isinstance(node.value.value, bool)
-    )
+    match node:
+        case nodes.Assign(value=nodes.Const(value=bool())):
+            return True
+    return False
 
 
 def get_node_first_ancestor_of_type(
@@ -1980,30 +1960,20 @@ def in_type_checking_block(node: nodes.NodeNG) -> bool:
     for ancestor in node.node_ancestors():
         if not isinstance(ancestor, nodes.If):
             continue
-        if isinstance(ancestor.test, nodes.Name):
-            if ancestor.test.name != "TYPE_CHECKING":
-                continue
-            lookup_result = ancestor.test.lookup(ancestor.test.name)[1]
-            if not lookup_result:
-                return False
-            maybe_import_from = lookup_result[0]
-            if (
-                isinstance(maybe_import_from, nodes.ImportFrom)
-                and maybe_import_from.modname == "typing"
-            ):
-                return True
-            inferred = safe_infer(ancestor.test)
-            if isinstance(inferred, nodes.Const) and inferred.value is False:
-                return True
-        elif isinstance(ancestor.test, nodes.Attribute):
-            if ancestor.test.attrname != "TYPE_CHECKING":
-                continue
-            inferred_module = safe_infer(ancestor.test.expr)
-            if (
-                isinstance(inferred_module, nodes.Module)
-                and inferred_module.name == "typing"
-            ):
-                return True
+        match ancestor.test:
+            case nodes.Name(name="TYPE_CHECKING" as n):
+                match ancestor.test.lookup(n)[1]:
+                    case []:
+                        return False
+                    case [nodes.ImportFrom(modname="typing"), *_]:
+                        return True
+                match safe_infer(ancestor.test):
+                    case nodes.Const(value=False):
+                        return True
+            case nodes.Attribute(attrname="TYPE_CHECKING"):
+                match safe_infer(ancestor.test.expr):
+                    case nodes.Module(name="typing"):
+                        return True
 
     return False
 
@@ -2012,24 +1982,24 @@ def is_typing_member(node: nodes.NodeNG, names_to_check: tuple[str, ...]) -> boo
     """Check if `node` is a member of the `typing` module and has one of the names from
     `names_to_check`.
     """
-    if isinstance(node, nodes.Name):
-        try:
-            import_from = node.lookup(node.name)[1][0]
-        except IndexError:
-            return False
+    match node:
+        case nodes.Name(name=name):
+            try:
+                import_from = node.lookup(name)[1][0]
+            except IndexError:
+                return False
 
-        if isinstance(import_from, nodes.ImportFrom):
-            return (
-                import_from.modname == "typing"
-                and import_from.real_name(node.name) in names_to_check
-            )
-    elif isinstance(node, nodes.Attribute):
-        inferred_module = safe_infer(node.expr)
-        return (
-            isinstance(inferred_module, nodes.Module)
-            and inferred_module.name == "typing"
-            and node.attrname in names_to_check
-        )
+            match import_from:
+                case nodes.ImportFrom(modname="typing") if (
+                    import_from.real_name(name) in names_to_check
+                ):
+                    return True
+            return False
+        case nodes.Attribute(attrname=attr):
+            match safe_infer(node.expr):
+                case nodes.Module(name="typing") if attr in names_to_check:
+                    return True
+            return False
     return False
 
 
@@ -2045,26 +2015,28 @@ def find_assigned_names_recursive(
     target: nodes.AssignName | nodes.BaseContainer,
 ) -> Iterator[str]:
     """Yield the names of assignment targets, accounting for nested ones."""
-    if isinstance(target, nodes.AssignName):
-        if target.name is not None:
-            yield target.name
-    elif isinstance(target, nodes.BaseContainer):
-        for elt in target.elts:
-            yield from find_assigned_names_recursive(elt)
+    match target:
+        case nodes.AssignName(name=name):
+            if name is not None:
+                yield name
+        case nodes.BaseContainer(elts=elts):
+            for elt in elts:
+                yield from find_assigned_names_recursive(elt)
 
 
 def has_starred_node_recursive(
-    node: nodes.For | nodes.Comprehension | nodes.Set,
+    node: nodes.For | nodes.Comprehension | nodes.Set | nodes.Starred,
 ) -> Iterator[bool]:
     """Yield ``True`` if a Starred node is found recursively."""
-    if isinstance(node, nodes.Starred):
-        yield True
-    elif isinstance(node, nodes.Set):
-        for elt in node.elts:
-            yield from has_starred_node_recursive(elt)
-    elif isinstance(node, (nodes.For, nodes.Comprehension)):
-        for elt in node.iter.elts:
-            yield from has_starred_node_recursive(elt)
+    match node:
+        case nodes.Starred():
+            yield True
+        case nodes.Set(elts=elts):
+            for elt in elts:
+                yield from has_starred_node_recursive(elt)
+        case nodes.For() | nodes.Comprehension():
+            for elt in node.iter.elts:
+                yield from has_starred_node_recursive(elt)
 
 
 def is_hashable(node: nodes.NodeNG) -> bool:
@@ -2075,10 +2047,13 @@ def is_hashable(node: nodes.NodeNG) -> bool:
     # pylint: disable = too-many-try-statements
     try:
         for inferred in node.infer():
-            if isinstance(inferred, (nodes.ClassDef, util.UninferableBase)):
-                return True
-            if not hasattr(inferred, "igetattr"):
-                return True
+            match inferred:
+                case nodes.ClassDef() | util.UninferableBase():
+                    return True
+                case object(igetattr=_):
+                    pass
+                case _:
+                    return True
             hash_fn = next(inferred.igetattr("__hash__"))
             if hash_fn.parent is inferred:
                 return True
@@ -2110,16 +2085,17 @@ def _is_target_name_in_binop_side(
     target: nodes.AssignName | nodes.AssignAttr, side: nodes.NodeNG | None
 ) -> bool:
     """Determine whether the target name-like node is referenced in the side node."""
-    if isinstance(side, nodes.Name):
-        if isinstance(target, nodes.AssignName):
-            return target.name == side.name  # type: ignore[no-any-return]
-        return False
-    if isinstance(side, nodes.Attribute) and isinstance(target, nodes.AssignAttr):
-        return target.as_string() == side.as_string()  # type: ignore[no-any-return]
-    if isinstance(side, nodes.Subscript) and isinstance(target, nodes.Subscript):
-        return subscript_chain_is_equal(target, side)
-
-    return False
+    match (side, target):
+        case [nodes.Name(), _]:
+            if isinstance(target, nodes.AssignName):
+                return target.name == side.name  # type: ignore[no-any-return]
+            return False
+        case [nodes.Attribute(), nodes.AssignAttr()]:
+            return target.as_string() == side.as_string()  # type: ignore[no-any-return]
+        case [nodes.Subscript(), nodes.Subscript()]:
+            return subscript_chain_is_equal(target, side)
+        case _:
+            return False
 
 
 def is_augmented_assign(node: nodes.Assign) -> tuple[bool, str]:
@@ -2136,15 +2112,13 @@ def is_augmented_assign(node: nodes.Assign) -> tuple[bool, str]:
     if not isinstance(target, (nodes.AssignName, nodes.AssignAttr, nodes.Subscript)):
         return False, ""
 
-    # We don't want to catch x = "1" + x or x = "%s" % x
-    if isinstance(binop.left, nodes.Const) and isinstance(
-        binop.left.value, (str, bytes)
-    ):
-        return False, ""
-
-    # This could probably be improved but for now we disregard all assignments from calls
-    if isinstance(binop.left, nodes.Call) or isinstance(binop.right, nodes.Call):
-        return False, ""
+    match (binop.left, binop.right):
+        case [nodes.Const(value=str() | bytes()), _]:
+            # We don't want to catch x = "1" + x or x = "%s" % x
+            return False, ""
+        case [nodes.Call(), _] | [_, nodes.Call()]:
+            # This could probably be improved but for now we disregard all assignments from calls
+            return False, ""
 
     if _is_target_name_in_binop_side(target, binop.left):
         return True, binop.op
@@ -2160,10 +2134,9 @@ def is_augmented_assign(node: nodes.Assign) -> tuple[bool, str]:
             inferred_left = binop.left
         else:
             inferred_left = safe_infer(binop.left)
-        if isinstance(inferred_left, nodes.Const) and isinstance(
-            inferred_left.value, int
-        ):
-            return True, binop.op
+        match inferred_left:
+            case nodes.Const(value=int()):
+                return True, binop.op
         return False, ""
     return False, ""
 
@@ -2205,11 +2178,13 @@ def is_terminating_func(node: nodes.Call) -> bool:
     """Detect call to exit(), quit(), os._exit(), sys.exit(), or
     functions annotated with `typing.NoReturn` or `typing.Never`.
     """
-    if (
-        not isinstance(node.func, nodes.Attribute)
-        and not (isinstance(node.func, nodes.Name))
-    ) or isinstance(node.parent, nodes.Lambda):
-        return False
+    match node:
+        case nodes.Call(parent=nodes.Lambda()):  # TODO
+            return False
+        case nodes.Call(func=nodes.Attribute() | nodes.Name()):
+            pass
+        case _:
+            return False
 
     try:
         for inferred in node.func.infer():
@@ -2218,11 +2193,10 @@ def is_terminating_func(node: nodes.Call) -> bool:
                 and inferred.qname() in TERMINATING_FUNCS_QNAMES
             ):
                 return True
-            # Unwrap to get the actual function node object
-            if isinstance(inferred, astroid.BoundMethod) and isinstance(
-                inferred._proxied, astroid.UnboundMethod
-            ):
-                inferred = inferred._proxied._proxied
+            match inferred:
+                case astroid.BoundMethod(_proxied=astroid.UnboundMethod(_proxied=p)):
+                    # Unwrap to get the actual function node object
+                    inferred = p
             if (  # pylint: disable=too-many-boolean-expressions
                 isinstance(inferred, nodes.FunctionDef)
                 and (
@@ -2284,33 +2258,34 @@ def get_inverse_comparator(op: str) -> str:
 def not_condition_as_string(
     test_node: nodes.Compare | nodes.Name | nodes.UnaryOp | nodes.BoolOp | nodes.BinOp,
 ) -> str:
-    msg = f"not {test_node.as_string()}"
-    if isinstance(test_node, nodes.UnaryOp):
-        msg = test_node.operand.as_string()
-    elif isinstance(test_node, nodes.BoolOp):
-        msg = f"not ({test_node.as_string()})"
-    elif isinstance(test_node, nodes.Compare):
-        lhs = test_node.left
-        ops, rhs = test_node.ops[0]
-        lower_priority_expressions = (
-            nodes.Lambda,
-            nodes.UnaryOp,
-            nodes.BoolOp,
-            nodes.IfExp,
-            nodes.NamedExpr,
-        )
-        lhs = (
-            f"({lhs.as_string()})"
-            if isinstance(lhs, lower_priority_expressions)
-            else lhs.as_string()
-        )
-        rhs = (
-            f"({rhs.as_string()})"
-            if isinstance(rhs, lower_priority_expressions)
-            else rhs.as_string()
-        )
-        msg = f"{lhs} {get_inverse_comparator(ops)} {rhs}"
-    return msg
+    match test_node:
+        case nodes.UnaryOp():
+            return test_node.operand.as_string()
+        case nodes.BoolOp():
+            return f"not ({test_node.as_string()})"
+        case nodes.Compare():
+            lhs = test_node.left
+            ops, rhs = test_node.ops[0]
+            lower_priority_expressions = (
+                nodes.Lambda,
+                nodes.UnaryOp,
+                nodes.BoolOp,
+                nodes.IfExp,
+                nodes.NamedExpr,
+            )
+            lhs = (
+                f"({lhs.as_string()})"
+                if isinstance(lhs, lower_priority_expressions)
+                else lhs.as_string()
+            )
+            rhs = (
+                f"({rhs.as_string()})"
+                if isinstance(rhs, lower_priority_expressions)
+                else rhs.as_string()
+            )
+            return f"{lhs} {get_inverse_comparator(ops)} {rhs}"
+        case _:
+            return f"not {test_node.as_string()}"
 
 
 @lru_cache(maxsize=1000)

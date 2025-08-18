@@ -300,11 +300,11 @@ class TypingChecker(BaseChecker):
     def _is_deprecated_union_annotation(
         annotation: nodes.NodeNG, union_name: str
     ) -> bool:
-        return (
-            isinstance(annotation, nodes.Subscript)
-            and isinstance(annotation.value, nodes.Name)
-            and annotation.value.name == union_name
-        )
+        match annotation:
+            case nodes.Subscript(value=nodes.Name(name=n)) if n == union_name:
+                return True
+            case _:
+                return False
 
     def _is_binop_union_annotation(self, annotation: nodes.NodeNG) -> bool:
         return self._should_check_alternative_union_syntax and isinstance(
@@ -313,9 +313,10 @@ class TypingChecker(BaseChecker):
 
     @staticmethod
     def _is_optional_none_annotation(annotation: nodes.Subscript) -> bool:
-        return (
-            isinstance(annotation.slice, nodes.Const) and annotation.slice.value is None
-        )
+        match annotation.slice:
+            case nodes.Const(value=None):
+                return True
+        return False
 
     def _parse_binops_typehints(
         self, binop_node: nodes.BinOp, typehints_list: list[nodes.NodeNG] | None = None
@@ -524,23 +525,21 @@ class TypingChecker(BaseChecker):
             return False
 
         # Check first Callable arg is a list of arguments -> Callable[[int], None]
-        if not (
-            isinstance(node.parent, nodes.Subscript)
-            and isinstance(node.parent.slice, nodes.Tuple)
-            and len(node.parent.slice.elts) == 2
-            and isinstance(node.parent.slice.elts[0], nodes.List)
-        ):
-            return False
+        match node.parent:
+            case nodes.Subscript(slice=nodes.Tuple(elts=[nodes.List(), _])):
+                pass
+            case _:
+                return False
 
         # Check nested inside Optional or Union
         parent_subscript = node.parent.parent
         if isinstance(parent_subscript, nodes.BaseContainer):
             parent_subscript = parent_subscript.parent
-        if not (
-            isinstance(parent_subscript, nodes.Subscript)
-            and isinstance(parent_subscript.value, (nodes.Name, nodes.Attribute))
-        ):
-            return False
+        match parent_subscript:
+            case nodes.Subscript(value=nodes.Name() | nodes.Attribute()):
+                pass
+            case _:
+                return False
 
         inferred_parent = safe_infer(parent_subscript.value)
         if not (

@@ -192,11 +192,10 @@ class LoggingChecker(checkers.BaseChecker):
         """Checks calls to logging methods."""
 
         def is_logging_name() -> bool:
-            return (
-                isinstance(node.func, nodes.Attribute)
-                and isinstance(node.func.expr, nodes.Name)
-                and node.func.expr.name in self._logging_names
-            )
+            match node.func:
+                case nodes.Attribute(expr=nodes.Name(name=n)):
+                    return n in self._logging_names
+            return False
 
         def is_logger_class() -> tuple[bool, str | None]:
             for inferred in infer_all(node.func):
@@ -237,35 +236,37 @@ class LoggingChecker(checkers.BaseChecker):
         else:
             return
 
-        format_arg = node.args[format_pos]
-        if isinstance(format_arg, nodes.BinOp):
-            binop = format_arg
-            emit = binop.op == "%"
-            if binop.op == "+" and not self._is_node_explicit_str_concatenation(binop):
-                total_number_of_strings = sum(
-                    1
-                    for operand in (binop.left, binop.right)
-                    if self._is_operand_literal_str(utils.safe_infer(operand))
-                )
-                emit = total_number_of_strings > 0
-            if emit:
+        match format_arg := node.args[format_pos]:
+            case nodes.BinOp():
+                binop = format_arg
+                emit = binop.op == "%"
+                if binop.op == "+" and not self._is_node_explicit_str_concatenation(
+                    binop
+                ):
+                    total_number_of_strings = sum(
+                        1
+                        for operand in (binop.left, binop.right)
+                        if self._is_operand_literal_str(utils.safe_infer(operand))
+                    )
+                    emit = total_number_of_strings > 0
+                if emit:
+                    self.add_message(
+                        "logging-not-lazy",
+                        node=node,
+                        args=(self._helper_string(node),),
+                    )
+            case nodes.Call():
+                self._check_call_func(format_arg)
+            case nodes.Const():
+                self._check_format_string(node, format_pos)
+            case nodes.JoinedStr():
+                if str_formatting_in_f_string(format_arg):
+                    return
                 self.add_message(
-                    "logging-not-lazy",
+                    "logging-fstring-interpolation",
                     node=node,
                     args=(self._helper_string(node),),
                 )
-        elif isinstance(format_arg, nodes.Call):
-            self._check_call_func(format_arg)
-        elif isinstance(format_arg, nodes.Const):
-            self._check_format_string(node, format_pos)
-        elif isinstance(format_arg, nodes.JoinedStr):
-            if str_formatting_in_f_string(format_arg):
-                return
-            self.add_message(
-                "logging-fstring-interpolation",
-                node=node,
-                args=(self._helper_string(node),),
-            )
 
     def _helper_string(self, node: nodes.Call) -> str:
         """Create a string that lists the valid types of formatting for this node."""
@@ -372,11 +373,11 @@ class LoggingChecker(checkers.BaseChecker):
 
 def is_complex_format_str(node: nodes.NodeNG) -> bool:
     """Return whether the node represents a string with complex formatting specs."""
-    inferred = utils.safe_infer(node)
-    if inferred is None or not (
-        isinstance(inferred, nodes.Const) and isinstance(inferred.value, str)
-    ):
-        return True
+    match inferred := utils.safe_infer(node):
+        case nodes.Const() | str():
+            pass
+        case _:
+            return True
     try:
         parsed = list(string.Formatter().parse(inferred.value))
     except ValueError:

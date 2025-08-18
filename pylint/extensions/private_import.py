@@ -144,26 +144,28 @@ class PrivateImportChecker(BaseChecker):
             # illegal usages later
             name_assignments = []
             for usage_node in node.locals[name]:
-                if isinstance(usage_node, nodes.AssignName) and isinstance(
-                    usage_node.parent, (nodes.AnnAssign, nodes.Assign)
-                ):
-                    assign_parent = usage_node.parent
-                    if isinstance(assign_parent, nodes.AnnAssign):
-                        name_assignments.append(assign_parent)
-                        private_name = self._populate_type_annotations_annotation(
-                            usage_node.parent.annotation, all_used_type_annotations
+                match usage_node:
+                    case nodes.AssignName(
+                        parent=nodes.AnnAssign() | nodes.Assign() as assign_parent
+                    ):
+                        if isinstance(assign_parent, nodes.AnnAssign):
+                            name_assignments.append(assign_parent)
+                            private_name = self._populate_type_annotations_annotation(
+                                usage_node.parent.annotation, all_used_type_annotations
+                            )
+                        elif isinstance(assign_parent, nodes.Assign):
+                            name_assignments.append(assign_parent)
+                    case nodes.FunctionDef():
+                        self._populate_type_annotations_function(
+                            usage_node, all_used_type_annotations
                         )
-                    elif isinstance(assign_parent, nodes.Assign):
-                        name_assignments.append(assign_parent)
-
-                if isinstance(usage_node, nodes.FunctionDef):
-                    self._populate_type_annotations_function(
-                        usage_node, all_used_type_annotations
-                    )
-                if isinstance(usage_node, nodes.LocalsDictNodeNG):
-                    self._populate_type_annotations(
-                        usage_node, all_used_type_annotations
-                    )
+                        self._populate_type_annotations(
+                            usage_node, all_used_type_annotations
+                        )
+                    case nodes.LocalsDictNodeNG():
+                        self._populate_type_annotations(
+                            usage_node, all_used_type_annotations
+                        )
             if private_name is not None:
                 # Found a new private annotation, make sure we are not accessing it elsewhere
                 all_used_type_annotations[private_name] = (
@@ -194,24 +196,23 @@ class PrivateImportChecker(BaseChecker):
         """Handles the possibility of an annotation either being a Name, i.e. just type,
         or a Subscript e.g. `Optional[type]` or an Attribute, e.g. `pylint.lint.linter`.
         """
-        if isinstance(node, nodes.Name) and node.name not in all_used_type_annotations:
-            all_used_type_annotations[node.name] = True
-            return node.name  # type: ignore[no-any-return]
-        if isinstance(node, nodes.Subscript):  # e.g. Optional[List[str]]
-            # slice is the next nested type
-            self._populate_type_annotations_annotation(
-                node.slice, all_used_type_annotations
-            )
-            # value is the current type name: could be a Name or Attribute
-            return self._populate_type_annotations_annotation(
-                node.value, all_used_type_annotations
-            )
-        if isinstance(node, nodes.Attribute):
-            # An attribute is a type like `pylint.lint.pylinter`. node.expr is the next level
-            # up, could be another attribute
-            return self._populate_type_annotations_annotation(
-                node.expr, all_used_type_annotations
-            )
+        match node:
+            case nodes.Name(name=n) if n not in all_used_type_annotations:
+                all_used_type_annotations[n] = True
+                return n  # type: ignore[no-any-return]
+            case nodes.Subscript(slice=s, value=v):
+                # slice is the next nested type
+                self._populate_type_annotations_annotation(s, all_used_type_annotations)
+                # value is the current type name: could be a Name or Attribute
+                return self._populate_type_annotations_annotation(
+                    v, all_used_type_annotations
+                )
+            case nodes.Attribute(expr=e):
+                # An attribute is a type like `pylint.lint.pylinter`. node.expr is the next level
+                # up, could be another attribute
+                return self._populate_type_annotations_annotation(
+                    e, all_used_type_annotations
+                )
         return None
 
     @staticmethod
@@ -224,15 +225,15 @@ class PrivateImportChecker(BaseChecker):
             # possible illegal access elsewhere
             return False
         for assignment in assignments:
-            current_attribute = None
-            if isinstance(assignment.value, nodes.Call):
-                current_attribute = assignment.value.func
-            elif isinstance(assignment.value, nodes.Attribute):
-                current_attribute = assignment.value
-            elif isinstance(assignment.value, nodes.Name):
-                current_attribute = assignment.value.name
-            if not current_attribute:
-                continue
+            match assignment.value:
+                case (
+                    nodes.Call(func=attr)
+                    | (nodes.Attribute() as attr)
+                    | nodes.Name(name=attr)
+                ):
+                    current_attribute = attr
+                case _:
+                    continue
             while isinstance(current_attribute, (nodes.Attribute, nodes.Call)):
                 if isinstance(current_attribute, nodes.Call):
                     current_attribute = current_attribute.func

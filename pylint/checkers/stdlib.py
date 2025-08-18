@@ -669,10 +669,9 @@ class StdlibChecker(DeprecatedMixin, BaseChecker):
                 continue
             if inferred.root().name in OPEN_MODULE:
                 open_func_name: str | None = None
-                if isinstance(node.func, nodes.Name):
-                    open_func_name = node.func.name
-                if isinstance(node.func, nodes.Attribute):
-                    open_func_name = node.func.attrname
+                match node.func:
+                    case nodes.Name(name=n) | nodes.Attribute(attrname=n):
+                        open_func_name = n
                 if open_func_name in OPEN_FILES_FUNCS:
                     self._check_open_call(node, inferred.root().name, open_func_name)
             elif inferred.root().name == UNITTEST_CASE:
@@ -794,17 +793,16 @@ class StdlibChecker(DeprecatedMixin, BaseChecker):
             )
 
     def _check_redundant_assert(self, node: nodes.Call, infer: InferenceResult) -> None:
-        if (
-            isinstance(infer, astroid.BoundMethod)
-            and node.args
-            and isinstance(node.args[0], nodes.Const)
-            and infer.name in {"assertTrue", "assertFalse"}
-        ):
-            self.add_message(
-                "redundant-unittest-assert",
-                args=(infer.name, node.args[0].value),
-                node=node,
-            )
+        match (infer, node):
+            case [
+                astroid.BoundMethod(name="assertTrue" | "assertFalse"),
+                nodes.Call(args=[nodes.Const(), *_]),
+            ]:
+                self.add_message(
+                    "redundant-unittest-assert",
+                    args=(infer.name, node.args[0].value),
+                    node=node,
+                )
 
     def _check_datetime(self, node: nodes.NodeNG) -> None:
         """Check that a datetime was inferred, if so, emit boolean-datetime warning."""
@@ -859,18 +857,19 @@ class StdlibChecker(DeprecatedMixin, BaseChecker):
             confidence = HIGH
             try:
                 if open_module in PATHLIB_MODULE:
-                    if node.func.attrname == "read_text":
-                        encoding_arg = utils.get_argument_from_call(
-                            node, position=0, keyword="encoding"
-                        )
-                    elif node.func.attrname == "write_text":
-                        encoding_arg = utils.get_argument_from_call(
-                            node, position=1, keyword="encoding"
-                        )
-                    else:
-                        encoding_arg = utils.get_argument_from_call(
-                            node, position=2, keyword="encoding"
-                        )
+                    match node.func.attrname:
+                        case "read_text":
+                            encoding_arg = utils.get_argument_from_call(
+                                node, position=0, keyword="encoding"
+                            )
+                        case "write_text":
+                            encoding_arg = utils.get_argument_from_call(
+                                node, position=1, keyword="encoding"
+                            )
+                        case _:
+                            encoding_arg = utils.get_argument_from_call(
+                                node, position=2, keyword="encoding"
+                            )
                 else:
                     encoding_arg = utils.get_argument_from_call(
                         node, position=3, keyword="encoding"
@@ -945,10 +944,13 @@ class StdlibChecker(DeprecatedMixin, BaseChecker):
         name = infer.qname()
         if isinstance(call_arg, nodes.Const):
             emit = False
-            if call_arg.value is None:
-                emit = not allow_none
-            elif not isinstance(call_arg.value, str):
-                emit = True
+            match call_arg.value:
+                case None:
+                    emit = not allow_none
+                case str():
+                    pass  # TODO
+                case _:
+                    emit = True
             if emit:
                 self.add_message(message, node=node, args=(name, call_arg.pytype()))
         else:
