@@ -3095,7 +3095,9 @@ class VariablesChecker(BaseChecker):
             case [
                 nodes.NodeNG(parent=nodes.Arguments(vararg=vararg)),
                 nodes.Name(name=name),
-            ] if name == vararg:
+            ] if (
+                name == vararg
+            ):
                 # Variable-length argument, we can't determine the length.
                 return
 

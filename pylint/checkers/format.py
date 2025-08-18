@@ -568,7 +568,9 @@ class FormatChecker(BaseTokenChecker, BaseRawFileChecker):
             case nodes.Expr(
                 parent=nodes.FunctionDef() | nodes.ClassDef(),
                 value=nodes.Const(value=v),
-            ) if v is Ellipsis:
+            ) if (
+                v is Ellipsis
+            ):
                 # Functions stubs and class with ``Ellipsis`` as body are exempted.
                 return
 
