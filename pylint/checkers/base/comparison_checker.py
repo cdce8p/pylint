@@ -145,20 +145,22 @@ class ComparisonChecker(_BasicChecker):
     ) -> None:
         def _is_float_nan(node: nodes.NodeNG) -> bool:
             try:
-                if isinstance(node, nodes.Call) and len(node.args) == 1:
-                    if (
-                        node.args[0].value.lower() == "nan"
-                        and node.inferred()[0].pytype() == "builtins.float"
+                match node:
+                    case nodes.Call(args=[object(value=str() as val)]) if (
+                        val.lower() == "nan"
                     ):
-                        return True
+                        if node.inferred()[0].pytype() == "builtins.float":
+                            return True
                 return False
             except AttributeError:
                 return False
 
         def _is_numpy_nan(node: nodes.NodeNG) -> bool:
-            if isinstance(node, nodes.Attribute) and node.attrname == "NaN":
-                if isinstance(node.expr, nodes.Name):
-                    return node.expr.name in {"numpy", "nmp", "np"}
+            match node:
+                case nodes.Attribute(
+                    attrname="NaN", expr=nodes.Name(name=name)
+                ) if name in {"numpy", "nmp", "np"}:
+                    return True
             return False
 
         def _is_nan(node: nodes.NodeNG) -> bool:
@@ -188,9 +190,10 @@ class ComparisonChecker(_BasicChecker):
         is_other_literal = isinstance(literal, (nodes.List, nodes.Dict, nodes.Set))
         is_const = False
         if isinstance(literal, nodes.Const):
-            if isinstance(literal.value, bool) or literal.value is None:
-                # Not interested in these values.
-                return
+            match literal.value:
+                case bool() | None:
+                    # Not interested in these values.
+                    return
             is_const = isinstance(literal.value, (bytes, str, int, float))
 
         if is_const or is_other_literal:
@@ -228,16 +231,13 @@ class ComparisonChecker(_BasicChecker):
         left_operand = node.left
         right_operand = node.ops[0][1]
         operator = node.ops[0][0]
-        if isinstance(left_operand, nodes.Const) and isinstance(
-            right_operand, nodes.Const
-        ):
-            left_operand = left_operand.value
-            right_operand = right_operand.value
-        elif isinstance(left_operand, nodes.Name) and isinstance(
-            right_operand, nodes.Name
-        ):
-            left_operand = left_operand.name
-            right_operand = right_operand.name
+        match (left_operand, right_operand):
+            case [nodes.Const(value=v1), nodes.Const(value=v2)] | [
+                nodes.Name(name=v1),
+                nodes.Name(name=v2),
+            ]:
+                left_operand = v1
+                right_operand = v2
 
         if left_operand == right_operand:
             suggestion = f"{left_operand} {operator} {right_operand}"

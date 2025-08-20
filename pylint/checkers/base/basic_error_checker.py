@@ -218,26 +218,25 @@ class BasicErrorChecker(_BasicChecker):
     def _too_many_starred_for_tuple(self, assign_tuple: nodes.Tuple) -> bool:
         starred_count = 0
         for elem in assign_tuple.itered():
-            if isinstance(elem, nodes.Tuple):
-                return self._too_many_starred_for_tuple(elem)
-            if isinstance(elem, nodes.Starred):
-                starred_count += 1
+            match elem:
+                case nodes.Tuple():
+                    return self._too_many_starred_for_tuple(elem)
+                case nodes.Starred():
+                    starred_count += 1
         return starred_count > 1
 
     @utils.only_required_for_messages(
         "too-many-star-expressions", "invalid-star-assignment-target"
     )
     def visit_assign(self, node: nodes.Assign) -> None:
-        # Check *a, *b = ...
-        assign_target = node.targets[0]
-        # Check *a = b
-        if isinstance(node.targets[0], nodes.Starred):
-            self.add_message("invalid-star-assignment-target", node=node)
-
-        if not isinstance(assign_target, nodes.Tuple):
-            return
-        if self._too_many_starred_for_tuple(assign_target):
-            self.add_message("too-many-star-expressions", node=node)
+        match assign_target := node.targets[0]:
+            case nodes.Starred():
+                # Check *a = b
+                self.add_message("invalid-star-assignment-target", node=node)
+            case nodes.Tuple():
+                # Check *a, *b = ...
+                if self._too_many_starred_for_tuple(assign_target):
+                    self.add_message("too-many-star-expressions", node=node)
 
     @utils.only_required_for_messages("star-needs-assignment-target")
     def visit_starred(self, node: nodes.Starred) -> None:
@@ -491,24 +490,17 @@ class BasicErrorChecker(_BasicChecker):
     ) -> None:
         """Check that a node is inside a for or while loop."""
         for parent in node.node_ancestors():
-            if isinstance(parent, (nodes.For, nodes.While)):
-                if node not in parent.orelse:
-                    return
+            match (parent, node):
+                case [nodes.For() | nodes.While(), _]:
+                    if node not in parent.orelse:
+                        return
 
-            if isinstance(parent, (nodes.ClassDef, nodes.FunctionDef)):
-                break
-            if (
-                isinstance(parent, nodes.Try)
-                and node in parent.finalbody
-                and isinstance(node, nodes.Continue)
-            ):
-                self.add_message("continue-in-finally", node=node)
-            if (
-                isinstance(parent, nodes.Try)
-                and node in parent.finalbody
-                and isinstance(node, nodes.Break)
-            ):
-                self.add_message("break-in-finally", node=node)
+                case [nodes.ClassDef() | nodes.FunctionDef(), _]:
+                    break
+                case [nodes.Try(), nodes.Continue()] if node in parent.finalbody:
+                    self.add_message("continue-in-finally", node=node)
+                case [nodes.Try(), nodes.Break()] if node in parent.finalbody:
+                    self.add_message("break-in-finally", node=node)
 
         self.add_message("not-in-loop", node=node, args=node_name)
 
@@ -543,26 +535,20 @@ class BasicErrorChecker(_BasicChecker):
 
             # Exempt functions redefined on a condition.
             if isinstance(node.parent, nodes.If):
-                # Exempt "if not <func>" cases
-                if (
-                    isinstance(node.parent.test, nodes.UnaryOp)
-                    and node.parent.test.op == "not"
-                    and isinstance(node.parent.test.operand, nodes.Name)
-                    and node.parent.test.operand.name == node.name
-                ):
-                    return
-
-                # Exempt "if <func> is not None" cases
-                # pylint: disable=too-many-boolean-expressions
-                if (
-                    isinstance(node.parent.test, nodes.Compare)
-                    and isinstance(node.parent.test.left, nodes.Name)
-                    and node.parent.test.left.name == node.name
-                    and node.parent.test.ops[0][0] == "is"
-                    and isinstance(node.parent.test.ops[0][1], nodes.Const)
-                    and node.parent.test.ops[0][1].value is None
-                ):
-                    return
+                match node.parent.test:
+                    case nodes.UnaryOp(op="not", operand=nodes.Name(name=name)) if (
+                        name == node.name
+                    ):
+                        # Exempt "if not <func>" cases
+                        return
+                    case nodes.Compare(
+                        left=nodes.Name(name=name),
+                        ops=[["is", nodes.Const(value=None)]],
+                    ) if (
+                        name == node.name
+                    ):
+                        # Exempt "if <func> is not None" cases
+                        return
 
             # Check if we have forward references for this node.
             try:

@@ -367,10 +367,11 @@ class BasicChecker(_BasicChecker):
                 # Just forcing the generator to infer all elements.
                 # astroid.exceptions.InferenceError are false positives
                 # see https://github.com/pylint-dev/pylint/pull/8185
-                if isinstance(inferred, nodes.FunctionDef):
-                    call_inferred = list(inferred.infer_call_result(node))
-                elif isinstance(inferred, nodes.Lambda):
-                    call_inferred = list(inferred.infer_call_result(node))
+                match inferred:
+                    case nodes.FunctionDef():
+                        call_inferred = list(inferred.infer_call_result(node))
+                    case nodes.Lambda():
+                        call_inferred = list(inferred.infer_call_result(node))
             except astroid.InferenceError:
                 call_inferred = None
             if call_inferred:
@@ -399,16 +400,22 @@ class BasicChecker(_BasicChecker):
         )
         first_item = next(maybe_generator_assigned, None)
         if first_item is not None:
-            # Emit if this variable is certain to hold a generator
-            if all(itertools.chain((first_item,), maybe_generator_assigned)):
-                emit = True
-            # If this variable holds the result of a call, save it for next test
-            elif (
-                len(lookup_result[1]) == 1
-                and isinstance(lookup_result[1][0].parent, nodes.Assign)
-                and isinstance(lookup_result[1][0].parent.value, nodes.Call)
-            ):
-                maybe_generator_call = lookup_result[1][0].parent.value
+            match lookup_result:  # TODO match expr
+                case _ if all(itertools.chain((first_item,), maybe_generator_assigned)):
+                    # Emit if this variable is certain to hold a generator
+                    emit = True
+                case [
+                    _,
+                    [
+                        object(
+                            parent=nodes.Assign(
+                                value=nodes.Call() as maybe_generator_call
+                            )
+                        )
+                    ],
+                ]:
+                    # If this variable holds the result of a call, save it for next test
+                    pass
         return emit, maybe_generator_call
 
     def visit_module(self, _: nodes.Module) -> None:
@@ -430,70 +437,76 @@ class BasicChecker(_BasicChecker):
     )
     def visit_expr(self, node: nodes.Expr) -> None:
         """Check for various kind of statements without effect."""
-        expr = node.value
-        if isinstance(expr, nodes.Const) and isinstance(expr.value, str):
-            # treat string statement in a separated message
-            # Handle PEP-257 attribute docstrings.
-            # An attribute docstring is defined as being a string right after
-            # an assignment at the module level, class level or __init__ level.
-            scope = expr.scope()
-            if isinstance(scope, (nodes.ClassDef, nodes.Module, nodes.FunctionDef)):
-                if isinstance(scope, nodes.FunctionDef) and scope.name != "__init__":
-                    pass
-                else:
-                    sibling = expr.previous_sibling()
+        match (expr := node.value, node.parent):
+            case [nodes.Const(value=str()), _]:
+                # treat string statement in a separated message
+                # Handle PEP-257 attribute docstrings.
+                # An attribute docstring is defined as being a string right after
+                # an assignment at the module level, class level or __init__ level.
+                scope = expr.scope()
+                if isinstance(scope, (nodes.ClassDef, nodes.Module, nodes.FunctionDef)):
                     if (
-                        sibling is not None
-                        and sibling.scope() is scope
-                        and isinstance(
-                            sibling, (nodes.Assign, nodes.AnnAssign, nodes.TypeAlias)
-                        )
+                        isinstance(scope, nodes.FunctionDef)
+                        and scope.name != "__init__"
                     ):
-                        return
-            self.add_message("pointless-string-statement", node=node)
-            return
+                        pass
+                    else:
+                        sibling = expr.previous_sibling()
+                        if (
+                            sibling is not None
+                            and sibling.scope() is scope
+                            and isinstance(
+                                sibling,
+                                (nodes.Assign, nodes.AnnAssign, nodes.TypeAlias),
+                            )
+                        ):
+                            return
+                self.add_message("pointless-string-statement", node=node)
+                return
 
-        # Warn W0133 for exceptions that are used as statements
-        if isinstance(expr, nodes.Call):
-            name = ""
-            if isinstance(expr.func, nodes.Name):
-                name = expr.func.name
-            elif isinstance(expr.func, nodes.Attribute):
-                name = expr.func.attrname
+            case [nodes.Call(), _]:
+                # Warn W0133 for exceptions that are used as statements
+                match expr.func:
+                    case nodes.Name(name=name) | nodes.Attribute(attrname=name):
+                        pass
+                    case _:
+                        name = ""
 
-            # Heuristic: only run inference for names that begin with an uppercase char
-            # This reduces W0133's coverage, but retains acceptable runtime performance
-            # For more details, see: https://github.com/pylint-dev/pylint/issues/8073
-            inferred = utils.safe_infer(expr) if name[:1].isupper() else None
-            if isinstance(inferred, objects.ExceptionInstance):
+                # Heuristic: only run inference for names that begin with an uppercase char
+                # This reduces W0133's coverage, but retains acceptable runtime performance
+                # For more details, see: https://github.com/pylint-dev/pylint/issues/8073
+                inferred = utils.safe_infer(expr) if name[:1].isupper() else None
+                if isinstance(inferred, objects.ExceptionInstance):
+                    self.add_message(
+                        "pointless-exception-statement", node=node, confidence=INFERENCE
+                    )
+                return
+
+            # Ignore if this is :
+            # * the unique child of a try/except body
+            # * a yield statement
+            # * an ellipsis (which can be used on Python 3 instead of pass)
+            # warn W0106 if we have any underlying function call (we can't predict
+            # side effects), else pointless-statement
+            case [nodes.Yield() | nodes.Await(), _]:
+                return
+            case [_, nodes.Try(body=[body]) | nodes.TryStar(body=[body])] if (
+                body == node
+            ):
+                return
+            case [nodes.Const(value=value), _] if value is Ellipsis:
+                return
+
+            case [nodes.NamedExpr(), _]:
                 self.add_message(
-                    "pointless-exception-statement", node=node, confidence=INFERENCE
+                    "named-expr-without-context", node=node, confidence=HIGH
                 )
-            return
-
-        # Ignore if this is :
-        # * the unique child of a try/except body
-        # * a yield statement
-        # * an ellipsis (which can be used on Python 3 instead of pass)
-        # warn W0106 if we have any underlying function call (we can't predict
-        # side effects), else pointless-statement
-        if (
-            isinstance(expr, (nodes.Yield, nodes.Await))
-            or (
-                isinstance(node.parent, (nodes.Try, nodes.TryStar))
-                and node.parent.body == [node]
-            )
-            or (isinstance(expr, nodes.Const) and expr.value is Ellipsis)
-        ):
-            return
-        if isinstance(expr, nodes.NamedExpr):
-            self.add_message("named-expr-without-context", node=node, confidence=HIGH)
-        elif any(expr.nodes_of_class(nodes.Call)):
-            self.add_message(
-                "expression-not-assigned", node=node, args=expr.as_string()
-            )
-        else:
-            self.add_message("pointless-statement", node=node)
+            case _ if any(expr.nodes_of_class(nodes.Call)):
+                self.add_message(
+                    "expression-not-assigned", node=node, args=expr.as_string()
+                )
+            case _:
+                self.add_message("pointless-statement", node=node)
 
     @staticmethod
     def _filter_vararg(
@@ -502,14 +515,15 @@ class BasicChecker(_BasicChecker):
         # Return the arguments for the given call which are
         # not passed as vararg.
         for arg in call_args:
-            if isinstance(arg, nodes.Starred):
-                if (
-                    isinstance(arg.value, nodes.Name)
-                    and arg.value.name != node.args.vararg
+            match arg:
+                case nodes.Starred(value=nodes.Name(name=name)) if (
+                    name != node.args.vararg
                 ):
                     yield arg
-            else:
-                yield arg
+                case nodes.Starred():
+                    continue
+                case _:
+                    yield arg
 
     @staticmethod
     def _has_variadic_argument(
@@ -539,12 +553,11 @@ class BasicChecker(_BasicChecker):
             # The body of the lambda must be a function call expression
             # for the lambda to be unnecessary.
             return
-        if isinstance(node.body.func, nodes.Attribute) and isinstance(
-            node.body.func.expr, nodes.Call
-        ):
-            # Chained call, the intermediate call might
-            # return something else (but we don't check that, yet).
-            return
+        match call.func:
+            case nodes.Attribute(expr=nodes.Call()):
+                # Chained call, the intermediate call might
+                # return something else (but we don't check that, yet).
+                return
 
         ordinary_args = list(node.args.args)
         new_call_args = list(self._filter_vararg(node, call.args))
@@ -685,14 +698,9 @@ class BasicChecker(_BasicChecker):
         if not expr:
             # we are doubtful on inferred type of node, so here just check if format
             # was called on print()
-            call_expr = call_node.func.expr
-            if not isinstance(call_expr, nodes.Call):
-                return
-            if (
-                isinstance(call_expr.func, nodes.Name)
-                and call_expr.func.name == "print"
-            ):
-                self.add_message("misplaced-format-function", node=call_node)
+            match call_node.func.expr:
+                case nodes.Call(func=nodes.Name(name="print")):
+                    self.add_message("misplaced-format-function", node=call_node)
 
     @utils.only_required_for_messages(
         "eval-used",
@@ -711,37 +719,36 @@ class BasicChecker(_BasicChecker):
             # ignore the name if it's not a builtin (i.e. not defined in the
             # locals nor globals scope)
             if not (name in node.frame() or name in node.root()):
-                if name == "exec":
-                    self.add_message("exec-used", node=node)
-                elif name == "reversed":
-                    self._check_reversed(node)
-                elif name == "eval":
-                    self.add_message("eval-used", node=node)
+                match name:
+                    case "exec":
+                        self.add_message("exec-used", node=node)
+                    case "reversed":
+                        self._check_reversed(node)
+                    case "eval":
+                        self.add_message("eval-used", node=node)
 
     @utils.only_required_for_messages("assert-on-tuple", "assert-on-string-literal")
     def visit_assert(self, node: nodes.Assert) -> None:
         """Check whether assert is used on a tuple or string literal."""
-        if isinstance(node.test, nodes.Tuple) and len(node.test.elts) > 0:
-            self.add_message("assert-on-tuple", node=node, confidence=HIGH)
-
-        if isinstance(node.test, nodes.Const) and isinstance(node.test.value, str):
-            if node.test.value:
-                when = "never"
-            else:
-                when = "always"
-            self.add_message("assert-on-string-literal", node=node, args=(when,))
+        match node.test:
+            case nodes.Tuple(elts=[_, *_]):
+                self.add_message("assert-on-tuple", node=node, confidence=HIGH)
+            case nodes.Const(value=str(val)):
+                when = "never" if val else "always"
+                self.add_message("assert-on-string-literal", node=node, args=(when,))
 
     @utils.only_required_for_messages("duplicate-key")
     def visit_dict(self, node: nodes.Dict) -> None:
         """Check duplicate key in dictionary."""
         keys = set()
         for k, _ in node.items:
-            if isinstance(k, nodes.Const):
-                key = k.value
-            elif isinstance(k, nodes.Attribute):
-                key = k.as_string()
-            else:
-                continue
+            match k:
+                case nodes.Const():
+                    key = k.value
+                case nodes.Attribute():
+                    key = k.as_string()
+                case _:
+                    continue
             if key in keys:
                 self.add_message("duplicate-key", node=node, args=key)
             keys.add(key)
@@ -751,10 +758,11 @@ class BasicChecker(_BasicChecker):
         """Check duplicate value in set."""
         values = set()
         for v in node.elts:
-            if isinstance(v, nodes.Const):
-                value = v.value
-            else:
-                continue
+            match v:
+                case nodes.Const():
+                    value = v.value
+                case _:
+                    continue
             if value in values:
                 self.add_message(
                     "duplicate-value", node=node, args=value, confidence=HIGH
@@ -781,16 +789,13 @@ class BasicChecker(_BasicChecker):
         """Check unreachable code."""
         unreachable_statement = node.next_sibling()
         if unreachable_statement is not None:
-            if (
-                isinstance(node, nodes.Return)
-                and isinstance(unreachable_statement, nodes.Expr)
-                and isinstance(unreachable_statement.value, nodes.Yield)
-            ):
-                # Don't add 'unreachable' for empty generators.
-                # Only add warning if 'yield' is followed by another node.
-                unreachable_statement = unreachable_statement.next_sibling()
-                if unreachable_statement is None:
-                    return
+            match (node, unreachable_statement):
+                case [nodes.Return(), nodes.Expr(value=nodes.Yield())]:
+                    # Don't add 'unreachable' for empty generators.
+                    # Only add warning if 'yield' is followed by another node.
+                    unreachable_statement = unreachable_statement.next_sibling()
+                    if unreachable_statement is None:
+                        return
             self.add_message(
                 "unreachable", node=unreachable_statement, confidence=confidence
             )
@@ -827,40 +832,40 @@ class BasicChecker(_BasicChecker):
         except utils.NoSuchArgumentError:
             pass
         else:
-            if isinstance(argument, util.UninferableBase):
-                return
-            if argument is None:
-                # Nothing was inferred.
-                # Try to see if we have iter().
-                if isinstance(node.args[0], nodes.Call):
-                    try:
-                        func = next(node.args[0].func.infer())
-                    except astroid.InferenceError:
-                        return
-                    if getattr(
-                        func, "name", None
-                    ) == "iter" and utils.is_builtin_object(func):
-                        self.add_message("bad-reversed-sequence", node=node)
-                return
-
-            if isinstance(argument, (nodes.List, nodes.Tuple)):
-                return
-
-            # dicts are reversible, but only from Python 3.8 onward. Prior to
-            # that, any class based on dict must explicitly provide a
-            # __reversed__ method
-            if not self._py38_plus and isinstance(argument, astroid.Instance):
-                if any(
-                    ancestor.name == "dict" and utils.is_builtin_object(ancestor)
-                    for ancestor in itertools.chain(
-                        (argument._proxied,), argument._proxied.ancestors()
-                    )
-                ):
-                    try:
-                        argument.locals[REVERSED_PROTOCOL_METHOD]
-                    except KeyError:
-                        self.add_message("bad-reversed-sequence", node=node)
+            match argument:
+                case util.UninferableBase():
                     return
+                case None:
+                    # Nothing was inferred.
+                    # Try to see if we have iter().
+                    if isinstance(node.args[0], nodes.Call):
+                        try:
+                            func = next(node.args[0].func.infer())
+                        except astroid.InferenceError:
+                            return
+                        if getattr(
+                            func, "name", None
+                        ) == "iter" and utils.is_builtin_object(func):
+                            self.add_message("bad-reversed-sequence", node=node)
+                    return
+                case nodes.List() | nodes.Tuple():
+                    return
+
+                case astroid.Instance() if not self._py38_plus:
+                    # dicts are reversible, but only from Python 3.8 onward. Prior to
+                    # that, any class based on dict must explicitly provide a
+                    # __reversed__ method
+                    if any(
+                        ancestor.name == "dict" and utils.is_builtin_object(ancestor)
+                        for ancestor in itertools.chain(
+                            (argument._proxied,), argument._proxied.ancestors()
+                        )
+                    ):
+                        try:
+                            argument.locals[REVERSED_PROTOCOL_METHOD]
+                        except KeyError:
+                            self.add_message("bad-reversed-sequence", node=node)
+                        return
 
             if hasattr(argument, "getattr"):
                 # everything else is not a proper sequence for reversed()
@@ -910,15 +915,16 @@ class BasicChecker(_BasicChecker):
                 # Unpacking a variable into the same name.
                 return
 
-        if isinstance(node.value, nodes.Name):
-            if len(targets) != 1:
-                return
-            rhs_names = [node.value]
-        elif isinstance(node.value, nodes.Tuple):
-            rhs_count = len(node.value.elts)
-            if len(targets) != rhs_count or rhs_count == 1:
-                return
-            rhs_names = node.value.elts
+        match node.value:
+            case nodes.Name():
+                if len(targets) != 1:
+                    return
+                rhs_names = [node.value]
+            case nodes.Tuple():
+                rhs_count = len(node.value.elts)
+                if len(targets) != rhs_count or rhs_count == 1:
+                    return
+                rhs_names = node.value.elts
 
         for target, lhs_name in zip(targets, rhs_names):
             if not isinstance(lhs_name, nodes.Name):
