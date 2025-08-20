@@ -128,79 +128,80 @@ class _ArgumentsManager:
         section_group: argparse._ArgumentGroup, argument: _Argument
     ) -> None:
         """Add an argument."""
-        if isinstance(argument, _StoreArgument):
-            section_group.add_argument(
-                *argument.flags,
-                action=argument.action,
-                default=argument.default,
-                type=argument.type,
-                help=argument.help,
-                metavar=argument.metavar,
-                choices=argument.choices,
-            )
-        elif isinstance(argument, _StoreOldNamesArgument):
-            section_group.add_argument(
-                *argument.flags,
-                **argument.kwargs,
-                action=argument.action,
-                default=argument.default,
-                type=argument.type,
-                help=argument.help,
-                metavar=argument.metavar,
-                choices=argument.choices,
-            )
-            # We add the old name as hidden option to make its default value get loaded when
-            # argparse initializes all options from the checker
-            assert argument.kwargs["old_names"]
-            for old_name in argument.kwargs["old_names"]:
+        match argument:
+            case _StoreArgument():
                 section_group.add_argument(
-                    f"--{old_name}",
-                    action="store",
+                    *argument.flags,
+                    action=argument.action,
                     default=argument.default,
                     type=argument.type,
-                    help=argparse.SUPPRESS,
+                    help=argument.help,
                     metavar=argument.metavar,
                     choices=argument.choices,
                 )
-        elif isinstance(argument, _StoreNewNamesArgument):
-            section_group.add_argument(
-                *argument.flags,
-                **argument.kwargs,
-                action=argument.action,
-                default=argument.default,
-                type=argument.type,
-                help=argument.help,
-                metavar=argument.metavar,
-                choices=argument.choices,
-            )
-        elif isinstance(argument, _StoreTrueArgument):
-            section_group.add_argument(
-                *argument.flags,
-                action=argument.action,
-                default=argument.default,
-                help=argument.help,
-            )
-        elif isinstance(argument, _CallableArgument):
-            section_group.add_argument(
-                *argument.flags,
-                **argument.kwargs,
-                action=argument.action,
-                help=argument.help,
-                metavar=argument.metavar,
-            )
-        elif isinstance(argument, _ExtendArgument):
-            section_group.add_argument(
-                *argument.flags,
-                action=argument.action,
-                default=argument.default,
-                type=argument.type,
-                help=argument.help,
-                metavar=argument.metavar,
-                choices=argument.choices,
-                dest=argument.dest,
-            )
-        else:
-            raise UnrecognizedArgumentAction
+            case _StoreOldNamesArgument():
+                section_group.add_argument(
+                    *argument.flags,
+                    **argument.kwargs,
+                    action=argument.action,
+                    default=argument.default,
+                    type=argument.type,
+                    help=argument.help,
+                    metavar=argument.metavar,
+                    choices=argument.choices,
+                )
+                # We add the old name as hidden option to make its default value get loaded when
+                # argparse initializes all options from the checker
+                assert argument.kwargs["old_names"]
+                for old_name in argument.kwargs["old_names"]:
+                    section_group.add_argument(
+                        f"--{old_name}",
+                        action="store",
+                        default=argument.default,
+                        type=argument.type,
+                        help=argparse.SUPPRESS,
+                        metavar=argument.metavar,
+                        choices=argument.choices,
+                    )
+            case _StoreNewNamesArgument():
+                section_group.add_argument(
+                    *argument.flags,
+                    **argument.kwargs,
+                    action=argument.action,
+                    default=argument.default,
+                    type=argument.type,
+                    help=argument.help,
+                    metavar=argument.metavar,
+                    choices=argument.choices,
+                )
+            case _StoreTrueArgument():
+                section_group.add_argument(
+                    *argument.flags,
+                    action=argument.action,
+                    default=argument.default,
+                    help=argument.help,
+                )
+            case _CallableArgument():
+                section_group.add_argument(
+                    *argument.flags,
+                    **argument.kwargs,
+                    action=argument.action,
+                    help=argument.help,
+                    metavar=argument.metavar,
+                )
+            case _ExtendArgument():
+                section_group.add_argument(
+                    *argument.flags,
+                    action=argument.action,
+                    default=argument.default,
+                    type=argument.type,
+                    help=argument.help,
+                    metavar=argument.metavar,
+                    choices=argument.choices,
+                    dest=argument.dest,
+                )
+            case _:
+                raise UnrecognizedArgumentAction
 
     def _load_default_argument_values(self) -> None:
         """Loads the default values of all registered options."""
@@ -364,12 +365,11 @@ class _ArgumentsManager:
                         continue
 
                 # Tomlkit doesn't support regular expressions
-                if isinstance(value, re.Pattern):
-                    value = value.pattern
-                elif isinstance(value, (list, tuple)) and isinstance(
-                    value[0], re.Pattern
-                ):
-                    value = [i.pattern for i in value]
+                match value:
+                    case re.Pattern():
+                        value = value.pattern
+                    case list([re.Pattern(), *_]) | tuple([re.Pattern(), *_]):
+                        value = [i.pattern for i in value]
 
                 # Handle tuples that should be strings
                 if optdict.get("type") == "py_version":

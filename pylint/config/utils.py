@@ -46,25 +46,28 @@ def _convert_option_to_argument(
     # Get the action type
     action = optdict.get("action", "store")
 
-    if action == "store_true":
-        return _StoreTrueArgument(
-            flags=flags,
-            action=action,
-            default=optdict.get("default", True),
-            arg_help=optdict.get("help", ""),
-            hide_help=optdict.get("hide", False),
-            section=optdict.get("group", None),
-        )
-    if not isinstance(action, str) and issubclass(action, _CallbackAction):
-        return _CallableArgument(
-            flags=flags,
-            action=action,
-            arg_help=optdict.get("help", ""),
-            kwargs=optdict.get("kwargs", {}),
-            hide_help=optdict.get("hide", False),
-            section=optdict.get("group", None),
-            metavar=optdict.get("metavar", None),
-        )
+    match action:
+        case "store_true":
+            return _StoreTrueArgument(
+                flags=flags,
+                action=action,
+                default=optdict.get("default", True),
+                arg_help=optdict.get("help", ""),
+                hide_help=optdict.get("hide", False),
+                section=optdict.get("group", None),
+            )
+        case str():
+            pass
+        case _ if issubclass(action, _CallbackAction):
+            return _CallableArgument(
+                flags=flags,
+                action=action,
+                arg_help=optdict.get("help", ""),
+                kwargs=optdict.get("kwargs", {}),
+                hide_help=optdict.get("hide", False),
+                section=optdict.get("group", None),
+                metavar=optdict.get("metavar", None),
+            )
 
     default = optdict["default"]
 

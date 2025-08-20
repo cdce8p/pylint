@@ -148,13 +148,17 @@ class PrivateImportChecker(BaseChecker):
                     case nodes.AssignName(
                         parent=nodes.AnnAssign() | nodes.Assign() as assign_parent
                     ):
-                        if isinstance(assign_parent, nodes.AnnAssign):
-                            name_assignments.append(assign_parent)
-                            private_name = self._populate_type_annotations_annotation(
-                                usage_node.parent.annotation, all_used_type_annotations
-                            )
-                        elif isinstance(assign_parent, nodes.Assign):
-                            name_assignments.append(assign_parent)
+                        match assign_parent:
+                            case nodes.AnnAssign():
+                                name_assignments.append(assign_parent)
+                                private_name = (
+                                    self._populate_type_annotations_annotation(
+                                        assign_parent.annotation,
+                                        all_used_type_annotations,
+                                    )
+                                )
+                            case nodes.Assign():
+                                name_assignments.append(assign_parent)
                     case nodes.FunctionDef():
                         self._populate_type_annotations_function(
                             usage_node, all_used_type_annotations
@@ -235,10 +239,13 @@ class PrivateImportChecker(BaseChecker):
                 case _:
                     continue
             while isinstance(current_attribute, (nodes.Attribute, nodes.Call)):
-                if isinstance(current_attribute, nodes.Call):
-                    current_attribute = current_attribute.func
-                if not isinstance(current_attribute, nodes.Name):
-                    current_attribute = current_attribute.expr
+                match current_attribute:
+                    case nodes.Call(func=func):
+                        current_attribute = func
+                    case nodes.Name():
+                        pass
+                    case _:
+                        current_attribute = current_attribute.expr
             if (
                 isinstance(current_attribute, nodes.Name)
                 and current_attribute.name == private_name

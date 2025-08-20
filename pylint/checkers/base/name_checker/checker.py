@@ -400,33 +400,31 @@ class NameChecker(_BasicChecker):
         "typevar-double-variance",
         "typevar-name-mismatch",
     )
-    def visit_assignname(  # pylint: disable=too-many-branches
-        self, node: nodes.AssignName
-    ) -> None:
+    def visit_assignname(self, node: nodes.AssignName) -> None:
         """Check module level assigned names."""
         frame = node.frame()
         assign_type = node.assign_type()
 
-        # Check names defined in comprehensions
-        if isinstance(assign_type, nodes.Comprehension):
-            self._check_name("inlinevar", node.name, node)
+        match (frame, assign_type):
+            case [_, nodes.Comprehension()]:
+                # Check names defined in comprehensions
+                self._check_name("inlinevar", node.name, node)
 
-        elif isinstance(assign_type, nodes.TypeVar):
-            self._check_name("typevar", node.name, node)
+            case [_, nodes.TypeVar()]:
+                self._check_name("typevar", node.name, node)
 
-        elif isinstance(assign_type, nodes.TypeAlias):
-            self._check_name("typealias", node.name, node)
-
-        # Check names defined in module scope
-        elif isinstance(frame, nodes.Module):
-            # Check names defined in AnnAssign nodes
-            if isinstance(assign_type, nodes.AnnAssign) and self._assigns_typealias(
-                assign_type.annotation
-            ):
+            case [_, nodes.TypeAlias()]:
                 self._check_name("typealias", node.name, node)
 
-            # Check names defined in Assign nodes
-            elif isinstance(assign_type, (nodes.Assign, nodes.AnnAssign)):
+            case [nodes.Module(), nodes.AnnAssign()] if self._assigns_typealias(
+                assign_type.annotation
+            ):
+                # Check names defined in AnnAssign nodes
+                self._check_name("typealias", node.name, node)
+
+            case [nodes.Module(), nodes.Assign() | nodes.AnnAssign()]:
+                # Check names defined in module scope
+                # Check names defined in Assign nodes
                 inferred_assign_type = (
                     utils.safe_infer(assign_type.value) if assign_type.value else None
                 )
@@ -505,29 +503,28 @@ class NameChecker(_BasicChecker):
                         node,
                         disallowed_check_only=redefines_import,
                     )
+            case [nodes.FunctionDef(), _]:
+                # Check names defined in function scopes
+                # global introduced variable aren't in the function locals
+                if node.name in frame and node.name not in frame.argnames():
+                    if not _redefines_import(node):
+                        if isinstance(
+                            assign_type, nodes.AnnAssign
+                        ) and self._assigns_typealias(assign_type.annotation):
+                            self._check_name("typealias", node.name, node)
+                        else:
+                            self._check_name("variable", node.name, node)
 
-        # Check names defined in function scopes
-        elif isinstance(frame, nodes.FunctionDef):
-            # global introduced variable aren't in the function locals
-            if node.name in frame and node.name not in frame.argnames():
-                if not _redefines_import(node):
-                    if isinstance(
-                        assign_type, nodes.AnnAssign
-                    ) and self._assigns_typealias(assign_type.annotation):
-                        self._check_name("typealias", node.name, node)
-                    else:
-                        self._check_name("variable", node.name, node)
-
-        # Check names defined in class scopes
-        elif isinstance(frame, nodes.ClassDef) and not any(
-            frame.local_attr_ancestors(node.name)
-        ):
-            if utils.is_enum_member(node) or utils.is_assign_name_annotated_with(
-                node, "Final"
+            case [nodes.ClassDef(), _] if not any(
+                frame.local_attr_ancestors(node.name)
             ):
-                self._check_name("class_const", node.name, node)
-            else:
-                self._check_name("class_attribute", node.name, node)
+                # Check names defined in class scopes
+                if utils.is_enum_member(node) or utils.is_assign_name_annotated_with(
+                    node, "Final"
+                ):
+                    self._check_name("class_const", node.name, node)
+                else:
+                    self._check_name("class_attribute", node.name, node)
 
     def _meets_exception_for_non_consts(
         self, inferred_assign_type: InferenceResult | None, name: str
@@ -643,38 +640,39 @@ class NameChecker(_BasicChecker):
     @staticmethod
     def _assigns_typealias(node: nodes.NodeNG | None) -> bool:
         """Check if a node is assigning a TypeAlias."""
-        inferred = utils.safe_infer(node)
-        if isinstance(inferred, (nodes.ClassDef, astroid.bases.UnionType)):
-            qname = inferred.qname()
-            if qname == "typing.TypeAlias":
-                return True
-            if qname in {".Union", "builtins.Union", "builtins.UnionType"}:
-                # Union is a special case because it can be used as a type alias
-                # or as a type annotation. We only want to check the former.
-                assert node is not None
-                return not isinstance(node.parent, nodes.AnnAssign)
-        elif isinstance(inferred, nodes.FunctionDef):
-            # TODO: when py3.12 is minimum, remove this condition
-            # TypeAlias became a class in python 3.12
-            if inferred.qname() == "typing.TypeAlias":
-                return True
+        match inferred := utils.safe_infer(node):
+            case nodes.ClassDef() | astroid.bases.UnionType():
+                match inferred.qname():
+                    case "typing.TypeAlias":
+                        return True
+                    case ".Union" | "builtins.Union" | "builtins.UnionType":
+                        # Union is a special case because it can be used as a type alias
+                        # or as a type annotation. We only want to check the former.
+                        assert node is not None
+                        return not isinstance(node.parent, nodes.AnnAssign)
+            case nodes.FunctionDef():
+                # TODO: when py3.12 is minimum, remove this condition
+                # TypeAlias became a class in python 3.12
+                if inferred.qname() == "typing.TypeAlias":
+                    return True
         return False
 
     def _check_typevar(self, name: str, node: nodes.AssignName) -> None:
         """Check for TypeVar lint violations."""
         variance: TypeVarVariance = TypeVarVariance.invariant
-        if isinstance(node.parent, nodes.Assign):
-            keywords = node.assign_type().value.keywords
-            args = node.assign_type().value.args
-        elif isinstance(node.parent, nodes.Tuple):
-            keywords = (
-                node.assign_type().value.elts[node.parent.elts.index(node)].keywords
-            )
-            args = node.assign_type().value.elts[node.parent.elts.index(node)].args
-        else:  # PEP 695 generic type nodes
-            keywords = ()
-            args = ()
-            variance = TypeVarVariance.inferred
+        match node.parent:
+            case nodes.Assign():
+                keywords = node.assign_type().value.keywords
+                args = node.assign_type().value.args
+            case nodes.Tuple():
+                keywords = (
+                    node.assign_type().value.elts[node.parent.elts.index(node)].keywords
+                )
+                args = node.assign_type().value.elts[node.parent.elts.index(node)].args
+            case _:  # PEP 695 generic type nodes
+                keywords = ()
+                args = ()
+                variance = TypeVarVariance.inferred
 
         name_arg = None
         for kw in keywords:
@@ -699,49 +697,48 @@ class NameChecker(_BasicChecker):
         if name_arg is None and args and isinstance(args[0], nodes.Const):
             name_arg = args[0].value
 
-        if variance == TypeVarVariance.inferred:
-            # Ignore variance check for PEP 695 type parameters.
-            # The variance is inferred by the type checker.
-            # Adding _co or _contra suffix can help to reason about TypeVar.
-            pass
-        elif variance == TypeVarVariance.double_variant:
-            self.add_message(
-                "typevar-double-variance",
-                node=node,
-                confidence=interfaces.INFERENCE,
-            )
-            self.add_message(
-                "typevar-name-incorrect-variance",
-                node=node,
-                args=("",),
-                confidence=interfaces.INFERENCE,
-            )
-        elif variance == TypeVarVariance.covariant and not name.endswith("_co"):
-            suggest_name = f"{re.sub('_contra$', '', name)}_co"
-            self.add_message(
-                "typevar-name-incorrect-variance",
-                node=node,
-                args=(f'. "{name}" is covariant, use "{suggest_name}" instead'),
-                confidence=interfaces.INFERENCE,
-            )
-        elif variance == TypeVarVariance.contravariant and not name.endswith("_contra"):
-            suggest_name = f"{re.sub('_co$', '', name)}_contra"
-            self.add_message(
-                "typevar-name-incorrect-variance",
-                node=node,
-                args=(f'. "{name}" is contravariant, use "{suggest_name}" instead'),
-                confidence=interfaces.INFERENCE,
-            )
-        elif variance == TypeVarVariance.invariant and (
-            name.endswith(("_co", "_contra"))
-        ):
-            suggest_name = re.sub("_contra$|_co$", "", name)
-            self.add_message(
-                "typevar-name-incorrect-variance",
-                node=node,
-                args=(f'. "{name}" is invariant, use "{suggest_name}" instead'),
-                confidence=interfaces.INFERENCE,
-            )
+        match variance:
+            case TypeVarVariance.inferred:
+                # Ignore variance check for PEP 695 type parameters.
+                # The variance is inferred by the type checker.
+                # Adding _co or _contra suffix can help to reason about TypeVar.
+                pass
+            case TypeVarVariance.double_variant:
+                self.add_message(
+                    "typevar-double-variance",
+                    node=node,
+                    confidence=interfaces.INFERENCE,
+                )
+                self.add_message(
+                    "typevar-name-incorrect-variance",
+                    node=node,
+                    args=("",),
+                    confidence=interfaces.INFERENCE,
+                )
+            case TypeVarVariance.covariant if not name.endswith("_co"):
+                suggest_name = f"{re.sub('_contra$', '', name)}_co"
+                self.add_message(
+                    "typevar-name-incorrect-variance",
+                    node=node,
+                    args=(f'. "{name}" is covariant, use "{suggest_name}" instead'),
+                    confidence=interfaces.INFERENCE,
+                )
+            case TypeVarVariance.contravariant if not name.endswith("_contra"):
+                suggest_name = f"{re.sub('_co$', '', name)}_contra"
+                self.add_message(
+                    "typevar-name-incorrect-variance",
+                    node=node,
+                    args=(f'. "{name}" is contravariant, use "{suggest_name}" instead'),
+                    confidence=interfaces.INFERENCE,
+                )
+            case TypeVarVariance.invariant if name.endswith(("_co", "_contra")):
+                suggest_name = re.sub("_contra$|_co$", "", name)
+                self.add_message(
+                    "typevar-name-incorrect-variance",
+                    node=node,
+                    args=(f'. "{name}" is invariant, use "{suggest_name}" instead'),
+                    confidence=interfaces.INFERENCE,
+                )
 
         if name_arg is not None and name_arg != name:
             self.add_message(

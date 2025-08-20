@@ -495,7 +495,7 @@ class TypingChecker(BaseChecker):
                     and inferred.qname() in TYPING_NORETURN
                 )
                 # In Python 3.7 - 3.8, NoReturn is alias of '_SpecialForm'
-                or (
+                or (  # TODO match expr
                     isinstance(inferred, astroid.bases.BaseInstance)
                     and isinstance(inferred._proxied, nodes.ClassDef)
                     and inferred._proxied.qname() == "typing._SpecialForm"
