@@ -1299,10 +1299,12 @@ accessed. Python regular expressions are accepted.",
 
     @staticmethod
     def _is_builtin_no_return(node: nodes.Assign) -> bool:
-        match node.value:
-            case nodes.Call(func=nodes.Attribute(expr=e, attrname=a)) if bool(
-                inferred := utils.safe_infer(e)
-            ) and a in BUILTINS_IMPLICIT_RETURN_NONE.get(inferred.pytype(), ()):
+        match node.value:  # TODO match expr
+            case nodes.Call(func=nodes.Attribute(expr=e, attrname=a)) if (
+                bool(inferred := utils.safe_infer(e))
+                and isinstance(inferred, bases.Instance)
+                and a in BUILTINS_IMPLICIT_RETURN_NONE.get(inferred.pytype(), ())
+            ):
                 return True
         return False
 

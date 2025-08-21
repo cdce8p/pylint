@@ -957,8 +957,7 @@ scope_type : {self.scope_type}
                 return True
             case nodes.ExceptHandler(name=object(name=n)) if n == name:  # TODO
                 return True
-            case _:
-                return False
+        return False
 
     @staticmethod
     def _defines_name_raises_or_returns_recursive(
