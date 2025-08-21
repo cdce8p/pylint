@@ -1431,9 +1431,9 @@ def function_arguments_are_ambiguous(
         for default1, default2 in zip(*zippable_default):
             match (default1, default2):
                 case [nodes.Const(value=v1), nodes.Const(value=v2)]:
-                    return v1 != v2
+                    return v1 != v2  # type: ignore[no-any-return]
                 case [nodes.Name(name=n1), nodes.Name(name=n2)]:
-                    return n1 != n2
+                    return n1 != n2  # type: ignore[no-any-return]
                 case _:
                     return True
     return False
@@ -2260,7 +2260,7 @@ def not_condition_as_string(
 ) -> str:
     match test_node:
         case nodes.UnaryOp():
-            return test_node.operand.as_string()
+            return test_node.operand.as_string()  # type: ignore[no-any-return]
         case nodes.BoolOp():
             return f"not ({test_node.as_string()})"
         case nodes.Compare():

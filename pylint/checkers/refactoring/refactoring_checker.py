@@ -836,7 +836,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 | [nodes.AssignName(name=a), nodes.AssignName(name=b)]
                 | [nodes.Const(value=a), nodes.Const(value=b)]
             ):
-                return a == b
+                return a == b  # type: ignore[no-any-return]
         return False
 
     def _is_dict_get_block(self, node: nodes.If) -> bool:
