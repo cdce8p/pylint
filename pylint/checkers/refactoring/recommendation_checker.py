@@ -436,19 +436,14 @@ class RecommendationChecker(checkers.BaseChecker):
 
             # If % applied to another type than str, it's modulo and can't be replaced by formatting
             match node.parent.left:
-                case object(value=str()):
+                case object(value=str(value)) if not ("{" in value or "}" in value):
+                    # Brackets can be inconvenient in f-string expressions
                     pass
                 case _:
                     return
 
-            # Brackets can be inconvenient in f-string expressions
-            if "{" in node.parent.left.value or "}" in node.parent.left.value:
-                return
-
-            inferred_right = utils.safe_infer(node.parent.right)
-
             # If dicts or lists of length > 1 are used
-            match inferred_right:
+            match utils.safe_infer(node.parent.right):
                 case nodes.Dict(items=i) | nodes.List(elts=i) if len(i) > 1:
                     return
 
