@@ -1565,7 +1565,7 @@ a metaclass class method.",
                     # a string, ignore the following checks
                     self.add_message("single-string-used-for-slots", node=node)
                     continue
-                case object(itered=_):
+                case object(itered=itered):
                     pass
                 case _:
                     # we can't obtain the values, maybe a .deque?
@@ -1574,7 +1574,7 @@ a metaclass class method.",
             if isinstance(slots, nodes.Dict):
                 values = [item[0] for item in slots.items]
             else:
-                values = slots.itered()
+                values = itered()
             if isinstance(values, util.UninferableBase):
                 continue
             for elt in values:

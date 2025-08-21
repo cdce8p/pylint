@@ -2050,11 +2050,11 @@ def is_hashable(node: nodes.NodeNG) -> bool:
             match inferred:
                 case nodes.ClassDef() | util.UninferableBase():
                     return True
-                case object(igetattr=_):
+                case object(igetattr=igetattr):
                     pass
                 case _:
                     return True
-            hash_fn = next(inferred.igetattr("__hash__"))
+            hash_fn = next(igetattr("__hash__"))
             if hash_fn.parent is inferred:
                 return True
             if getattr(hash_fn, "value", True) is not None:
