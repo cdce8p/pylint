@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import astroid
 import astroid.bases
 import astroid.exceptions
-from astroid import nodes
+from astroid import nodes, util
 
 from pylint import checkers
 from pylint.checkers import utils as checker_utils
@@ -54,7 +54,7 @@ class AsyncChecker(checkers.BaseChecker):
     def visit_asyncwith(self, node: nodes.AsyncWith) -> None:
         for ctx_mgr, _ in node.items:
             match inferred := checker_utils.safe_infer(ctx_mgr):
-                case _ if not inferred:
+                case None | util.UninferableBase():
                     continue
                 case nodes.AsyncFunctionDef():
                     # Check if we are dealing with a function decorated
