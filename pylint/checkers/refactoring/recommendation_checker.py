@@ -110,12 +110,13 @@ class RecommendationChecker(checkers.BaseChecker):
         str.rsplit().
         """
         # Check if call is split() or rsplit()
-        if not (
-            isinstance(node.func, nodes.Attribute)
-            and node.func.attrname in {"split", "rsplit"}
-            and isinstance(utils.safe_infer(node.func), astroid.BoundMethod)
-        ):
-            return
+        match node.func:
+            case nodes.Attribute(attrname="split" | "rsplit") if isinstance(
+                utils.safe_infer(node.func), astroid.BoundMethod
+            ):
+                pass
+            case _:
+                return
         inferred_expr = utils.safe_infer(node.func.expr)
         if isinstance(inferred_expr, astroid.Instance) and any(
             inferred_expr.nodes_of_class(nodes.ClassDef)

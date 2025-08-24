@@ -373,9 +373,11 @@ class LoggingChecker(checkers.BaseChecker):
 
 def is_complex_format_str(node: nodes.NodeNG) -> bool:
     """Return whether the node represents a string with complex formatting specs."""
-    inferred = utils.safe_infer(node)
-    if not (isinstance(inferred, nodes.Const) and isinstance(inferred.value, str)):
-        return True
+    match inferred := utils.safe_infer(node):
+        case nodes.Const(value=str()):
+            pass
+        case _:
+            return True
     try:
         parsed = list(string.Formatter().parse(inferred.value))
     except ValueError:
