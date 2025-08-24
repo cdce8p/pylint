@@ -574,9 +574,10 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     @staticmethod
     def _is_bool_const(node: nodes.Return | nodes.Assign) -> bool:
-        return isinstance(node.value, nodes.Const) and isinstance(
-            node.value.value, bool
-        )
+        match node.value:
+            case nodes.Const(value=bool()):
+                return True
+        return False
 
     def _is_actual_elif(self, node: nodes.If | nodes.Try) -> bool:
         """Check if the given node is an actual elif.
@@ -1184,10 +1185,10 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     @staticmethod
     def _has_exit_in_scope(scope: nodes.LocalsDictNodeNG) -> bool:
-        exit_func = scope.locals.get("exit")
-        return bool(
-            exit_func and isinstance(exit_func[0], (nodes.ImportFrom, nodes.Import))
-        )
+        match scope.locals.get("exit"):
+            case [nodes.ImportFrom() | nodes.Import(), *_]:
+                return True
+        return False
 
     def _check_quit_exit_call(self, node: nodes.Call) -> None:
         match node.func:

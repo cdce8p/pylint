@@ -1914,17 +1914,24 @@ def is_function_body_ellipsis(node: nodes.FunctionDef) -> bool:
 
 
 def is_base_container(node: nodes.NodeNG | None) -> bool:
-    return isinstance(node, nodes.BaseContainer) and not node.elts
+    match node:
+        case nodes.BaseContainer(elts=[]):
+            return True
+    return False
 
 
 def is_empty_dict_literal(node: nodes.NodeNG | None) -> bool:
-    return isinstance(node, nodes.Dict) and not node.items
+    match node:
+        case nodes.Dict(items=[]):
+            return True
+    return False
 
 
 def is_empty_str_literal(node: nodes.NodeNG | None) -> bool:
-    return (
-        isinstance(node, nodes.Const) and isinstance(node.value, str) and not node.value
-    )
+    match node:
+        case nodes.Const(value=""):
+            return True
+    return False
 
 
 def returns_bool(node: nodes.NodeNG) -> bool:
