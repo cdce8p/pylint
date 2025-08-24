@@ -182,12 +182,11 @@ class ModifiedIterationChecker(checkers.BaseChecker):
     ) -> bool:
         if not isinstance(node, nodes.DelName):
             return False
-        if not isinstance(iter_obj.parent, nodes.For):
-            return False
-        if not isinstance(
-            iter_obj.parent.target, (nodes.AssignName, nodes.BaseContainer)
-        ):
-            return False
+        match iter_obj.parent:
+            case nodes.For(target=nodes.AssignName() | nodes.BaseContainer()):
+                pass
+            case _:
+                return False
         return any(
             t == node.name
             for t in utils.find_assigned_names_recursive(iter_obj.parent.target)

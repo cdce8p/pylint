@@ -167,15 +167,15 @@ def _is_trivial_super_delegation(function: nodes.FunctionDef) -> bool:
         return False
 
     call = statement.value
-    if (
-        not isinstance(call, nodes.Call)
-        # Not a super() attribute access.
-        or not isinstance(call.func, nodes.Attribute)
-    ):
-        return False
+    match call := statement.value:
+        case nodes.Call(func=nodes.Attribute(expr=expr)):
+            pass
+        case _:
+            # Not a super() attribute access.
+            return False
 
     # Anything other than a super call is non-trivial.
-    super_call = safe_infer(call.func.expr)
+    super_call = safe_infer(expr)
     if not isinstance(super_call, astroid.objects.Super):
         return False
 
@@ -1843,20 +1843,20 @@ a metaclass class method.",
         is defined.
         `node` is an assign node.
         """
-        if not isinstance(node.value, nodes.Call):
-            return
-
         # check the function called is "classmethod" or "staticmethod"
-        func = node.value.func
-        if not isinstance(func, nodes.Name) or func.name not in (
-            "classmethod",
-            "staticmethod",
-        ):
-            return
+        # Check if the arg passed to classmethod is a class member
+        match node.value:
+            case nodes.Call(
+                func=nodes.Name(name="classmethod" | "staticmethod" as name),
+                args=[nodes.Name(name=method_name), *_],
+            ):
+                pass
+            case _:
+                return
 
         msg = (
             "no-classmethod-decorator"
-            if func.name == "classmethod"
+            if name == "classmethod"
             else "no-staticmethod-decorator"
         )
         # assignment must be at a class scope
@@ -1864,12 +1864,6 @@ a metaclass class method.",
         if not isinstance(parent_class, nodes.ClassDef):
             return
 
-        # Check if the arg passed to classmethod is a class member
-        classmeth_arg = node.value.args[0]
-        if not isinstance(classmeth_arg, nodes.Name):
-            return
-
-        method_name = classmeth_arg.name
         if any(method_name == member.name for member in parent_class.mymethods()):
             self.add_message(msg, node=node.targets[0])
 
@@ -2225,9 +2219,11 @@ a metaclass class method.",
         not_called_yet = dict(to_call)
         parents_with_called_inits: set[bases.UnboundMethod] = set()
         for stmt in node.nodes_of_class(nodes.Call):
-            expr = stmt.func
-            if not isinstance(expr, nodes.Attribute) or expr.attrname != "__init__":
-                continue
+            match expr := stmt.func:
+                case nodes.Attribute(attrname="__init__"):
+                    pass
+                case _:
+                    continue
             # skip the test if using super
             match expr.expr:
                 case nodes.Call(func=nodes.Name(name="super")):
@@ -2388,16 +2384,16 @@ a metaclass class method.",
             first_attr = self._first_attrs[-1]
         else:
             # It's possible the function was already unregistered.
-            closest_func = utils.get_node_first_ancestor_of_type(
+            match closest_func := utils.get_node_first_ancestor_of_type(
                 node, nodes.FunctionDef
-            )
-            if closest_func is None:
-                return False
-            if not closest_func.is_bound():
-                return False
-            if not closest_func.args.args:
-                return False
-            first_attr = closest_func.args.args[0].name
+            ):
+                case nodes.FunctionDef(
+                    args=nodes.Arguments(args=[nodes.AssignName(name=first_attr), *_])
+                ) if closest_func.is_bound():
+                    pass
+                case _:
+                    return False
+        # pylint: disable=possibly-used-before-assignment
         return isinstance(node, nodes.Name) and node.name == first_attr
 
 

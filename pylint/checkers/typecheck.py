@@ -1267,14 +1267,11 @@ accessed. Python regular expressions are accepted.",
             self.add_message("assignment-from-no-return", node=node)
         else:
             for ret_node in return_nodes:
-                if not (
-                    (
-                        isinstance(ret_node.value, nodes.Const)
-                        and ret_node.value.value is None
-                    )
-                    or ret_node.value is None
-                ):
-                    break
+                match ret_node.value:
+                    case nodes.Const(value=None) | None:
+                        pass
+                    case _:
+                        break
             else:
                 self.add_message("assignment-from-none", node=node)
 
@@ -2184,12 +2181,12 @@ accessed. Python regular expressions are accepted.",
 
     @only_required_for_messages("dict-items-missing-iter")
     def visit_for(self, node: nodes.For) -> None:
-        if not isinstance(node.target, nodes.Tuple):
-            # target is not a tuple
-            return
-        if not len(node.target.elts) == 2:
-            # target is not a tuple of two elements
-            return
+        match node.target:
+            case nodes.Tuple(elts=[_, _]):
+                pass
+            case _:
+                # target is not a tuple of two elements
+                return
 
         iterable = node.iter
         if not isinstance(iterable, nodes.Name):

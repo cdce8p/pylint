@@ -110,12 +110,13 @@ class RecommendationChecker(checkers.BaseChecker):
         str.rsplit().
         """
         # Check if call is split() or rsplit()
-        if not (
-            isinstance(node.func, nodes.Attribute)
-            and node.func.attrname in {"split", "rsplit"}
-            and isinstance(utils.safe_infer(node.func), astroid.BoundMethod)
-        ):
-            return
+        match node.func:
+            case nodes.Attribute(attrname="split" | "rsplit") if isinstance(
+                utils.safe_infer(node.func), astroid.BoundMethod
+            ):
+                pass
+            case _:
+                return
         inferred_expr = utils.safe_infer(node.func.expr)
         if isinstance(inferred_expr, astroid.Instance) and any(
             inferred_expr.nodes_of_class(nodes.ClassDef)
@@ -210,15 +211,14 @@ class RecommendationChecker(checkers.BaseChecker):
             return
 
         # Is it a proper len call?
-        if not isinstance(node.iter.args[-1], nodes.Call):
-            return
-        second_func = node.iter.args[-1].func
-        if not self._is_builtin(second_func, "len"):
-            return
-        len_args = node.iter.args[-1].args
-        if not len_args or len(len_args) != 1:
-            return
-        iterating_object = len_args[0]
+        match node.iter.args:
+            case [
+                *_,
+                nodes.Call(func=second_func, args=[iterating_object]),
+            ] if self._is_builtin(second_func, "len"):
+                pass
+            case _:
+                return
         if isinstance(iterating_object, nodes.Name):
             expected_subscript_val_type = nodes.Name
         elif isinstance(iterating_object, nodes.Attribute):

@@ -1330,10 +1330,11 @@ class VariablesChecker(BaseChecker):
         "unbalanced-dict-unpacking",
     )
     def visit_for(self, node: nodes.For) -> None:
-        if not isinstance(node.target, nodes.Tuple):
-            return
-
-        targets = node.target.elts
+        match node.target:
+            case nodes.Tuple(elts=targets):
+                pass
+            case _:
+                return
 
         inferred = utils.safe_infer(node.iter)
         if not isinstance(inferred, DICT_TYPES):
@@ -1675,8 +1676,11 @@ class VariablesChecker(BaseChecker):
 
     @utils.only_required_for_messages("redefined-outer-name")
     def visit_excepthandler(self, node: nodes.ExceptHandler) -> None:
-        if not node.name or not isinstance(node.name, nodes.AssignName):
-            return
+        match node.name:
+            case nodes.AssignName():
+                pass
+            case _:
+                return
 
         for outer_except, outer_except_assign_name in self._except_handler_names_queue:
             if node.name.name == outer_except_assign_name.name:
@@ -2469,8 +2473,11 @@ class VariablesChecker(BaseChecker):
         defstmt: _base_nodes.Statement,
     ) -> bool:
         """Check if variable only gets assigned a type and never a value."""
-        if not isinstance(defstmt, nodes.AnnAssign) or defstmt.value:
-            return False
+        match defstmt:
+            case nodes.AnnAssign(value=v) if not v:
+                pass
+            case _:
+                return False
 
         defstmt_frame = defstmt.frame()
         node_frame = node.frame()
@@ -3461,10 +3468,11 @@ class VariablesChecker(BaseChecker):
     ) -> None:
         """Check for the potential-index-error message."""
         # Currently we only check simple slices of a single integer
-        if not isinstance(inferred_slice, nodes.Const) or not isinstance(
-            inferred_slice.value, int
-        ):
-            return
+        match inferred_slice:
+            case nodes.Const(value=int()):
+                pass
+            case _:
+                return
 
         # If the node.value is a Tuple or List without inference it is defined in place
         if isinstance(node.value, (nodes.Tuple, nodes.List)):
