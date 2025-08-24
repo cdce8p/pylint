@@ -38,14 +38,13 @@ class ConsiderTernaryExpressionChecker(BaseChecker):
                 return
 
         for bname, oname in zip(bst.targets, ost.targets):
-            if not (
-                isinstance(bname, nodes.AssignName)
-                and isinstance(oname, nodes.AssignName)
-                and bname.name == oname.name
-            ):
-                return
-
-        self.add_message("consider-ternary-expression", node=node)
+            match (bname, oname):
+                case [nodes.AssignName(name=bn), nodes.AssignName(name=on)] if bn == on:
+                    continue
+                case _:
+                    break
+        else:
+            self.add_message("consider-ternary-expression", node=node)
 
 
 def register(linter: PyLinter) -> None:
