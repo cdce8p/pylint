@@ -562,8 +562,9 @@ class StringFormatChecker(BaseChecker):
                 if key not in named:
                     continue
                 argname = named[key]
-            if argname is None or isinstance(argname, util.UninferableBase):
-                continue
+            match argname:
+                case None | util.UninferableBase():
+                    continue
             try:
                 argument = utils.safe_infer(argname)
             except astroid.InferenceError:

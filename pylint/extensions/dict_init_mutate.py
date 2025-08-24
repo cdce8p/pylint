@@ -50,16 +50,11 @@ class DictInitMutateChecker(BaseChecker):
         ):
             return
 
-        sibling_target = first_sibling.targets[0]
-        if not isinstance(sibling_target, nodes.Subscript):
-            return
-
-        sibling_name = sibling_target.value
-        if not isinstance(sibling_name, nodes.Name):
-            return
-
-        if sibling_name.name == dict_name.name:
-            self.add_message("dict-init-mutate", node=node, confidence=HIGH)
+        match node.next_sibling():
+            case nodes.Assign(
+                targets=[nodes.Subscript(value=nodes.Name(name=name))]
+            ) if (name == dict_name):
+                self.add_message("dict-init-mutate", node=node, confidence=HIGH)
 
 
 def register(linter: PyLinter) -> None:
