@@ -2202,9 +2202,12 @@ accessed. Python regular expressions are accepted.",
 
     @only_required_for_messages("dict-items-missing-iter")
     def visit_for(self, node: nodes.For) -> None:
-        if not (isinstance(node.target, nodes.Tuple) and len(node.target.elts) == 2):
-            # target is not a tuple of two elements
-            return
+        match node.target:
+            case nodes.Tuple(elts=[_, _]):
+                pass
+            case _:
+                # target is not a tuple of two elements
+                return
 
         iterable = node.iter
         if not isinstance(iterable, nodes.Name):

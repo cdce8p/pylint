@@ -533,11 +533,11 @@ class TypingChecker(BaseChecker):
         parent_subscript = node.parent.parent
         if isinstance(parent_subscript, nodes.BaseContainer):
             parent_subscript = parent_subscript.parent
-        if not (
-            isinstance(parent_subscript, nodes.Subscript)
-            and isinstance(parent_subscript.value, (nodes.Name, nodes.Attribute))
-        ):
-            return False
+        match parent_subscript:
+            case nodes.Subscript(value=nodes.Name() | nodes.Attribute()):
+                pass
+            case _:
+                return False
 
         inferred_parent = safe_infer(parent_subscript.value)
         if not (

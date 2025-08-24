@@ -2223,9 +2223,11 @@ a metaclass class method.",
         not_called_yet = dict(to_call)
         parents_with_called_inits: set[bases.UnboundMethod] = set()
         for stmt in node.nodes_of_class(nodes.Call):
-            expr = stmt.func
-            if not (isinstance(expr, nodes.Attribute) and expr.attrname == "__init__"):
-                continue
+            match expr := stmt.func:
+                case nodes.Attribute(attrname="__init__"):
+                    pass
+                case _:
+                    continue
             # skip the test if using super
             match expr.expr:
                 case nodes.Call(func=nodes.Name(name="super")):

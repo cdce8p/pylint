@@ -267,8 +267,11 @@ class StringFormatChecker(BaseChecker):
         left = node.left
         args = node.right
 
-        if not (isinstance(left, nodes.Const) and isinstance(left.value, str)):
-            return
+        match left:
+            case nodes.Const(value=str()):
+                pass
+            case _:
+                return
         format_string = left.value
         try:
             (
@@ -470,8 +473,11 @@ class StringFormatChecker(BaseChecker):
             strnode = next(func.bound.infer())
         except astroid.InferenceError:
             return
-        if not (isinstance(strnode, nodes.Const) and isinstance(strnode.value, str)):
-            return
+        match strnode:
+            case nodes.Const(value=str()):
+                pass
+            case _:
+                return
         try:
             call_site = arguments.CallSite.from_call(node)
         except astroid.InferenceError:

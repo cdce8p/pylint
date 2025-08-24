@@ -1716,8 +1716,11 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     def _check_use_dict_literal(self, node: nodes.Call) -> None:
         """Check if dict is created by using the literal {}."""
-        if not (isinstance(node.func, nodes.Name) and node.func.name == "dict"):
-            return
+        match node.func:
+            case nodes.Name(name="dict"):
+                pass
+            case _:
+                return
         inferred = utils.safe_infer(node.func)
         if (
             isinstance(inferred, nodes.ClassDef)
@@ -1754,18 +1757,20 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         if not isinstance(node, nodes.JoinedStr):
             return None
 
-        values = [
+        match values := [
             value for value in node.values if isinstance(value, nodes.FormattedValue)
-        ]
-        if not (len(values) == 1 and isinstance(values[0].value, nodes.Name)):
-            return None
+        ]:
+            case [nodes.FormattedValue(value=nodes.Name(name=name))]:
+                pass
+            case _:
+                return None
         # If there are more values in joined string than formatted values,
         # they are probably separators.
         # Allow them only if the option `suggest-join-with-non-empty-separator` is set
         with_separators = len(node.values) > len(values)
         if with_separators and not self._suggest_join_with_non_empty_separator:
             return None
-        return cast("str | None", values[0].value.name)
+        return name  # type: ignore[no-any-return]
 
     def _check_consider_using_join(self, aug_assign: nodes.AugAssign) -> None:
         """We start with the augmented assignment and work our way upwards.
@@ -1775,9 +1780,11 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         for number in ['1', '2', '3']  # for_loop
             result += number  # aug_assign
         """
-        for_loop = aug_assign.parent
-        if not (isinstance(for_loop, nodes.For) and len(for_loop.body) == 1):
-            return
+        match for_loop := aug_assign.parent:
+            case nodes.For(body=[_], target=nodes.AssignName(name=target_name)):
+                pass
+            case _:
+                return
         assign = for_loop.previous_sibling()
         if not isinstance(assign, nodes.Assign):
             return
@@ -1790,11 +1797,10 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         is_concat_loop = (
             aug_assign.op == "+="
             and isinstance(aug_assign.target, nodes.AssignName)
-            and len(for_loop.body) == 1
             and aug_assign.target.name in result_assign_names
             and isinstance(assign.value, nodes.Const)
             and isinstance(assign.value.value, str)
-            and self._name_to_concatenate(aug_assign.value) == for_loop.target.name
+            and self._name_to_concatenate(aug_assign.value) == target_name
         )
         if is_concat_loop:
             self.add_message("consider-using-join", node=aug_assign)
