@@ -846,16 +846,15 @@ def _is_property_decorator(decorator: nodes.Name) -> bool:
             returns: list[nodes.Return] = list(
                 inferred._get_return_nodes_skip_functions()
             )
-            if len(returns) == 1 and isinstance(
-                returns[0].value, (nodes.Name, nodes.Attribute)
-            ):
-                inferred = safe_infer(returns[0].value)
-                if (
-                    inferred
-                    and isinstance(inferred, astroid.objects.Property)
-                    and isinstance(inferred.function, nodes.FunctionDef)
-                ):
-                    return decorated_with_property(inferred.function)
+            match returns:
+                case [object(value=nodes.Name() | nodes.Attribute() as v)]:
+                    inferred = safe_infer(v)
+                    if (
+                        inferred
+                        and isinstance(inferred, astroid.objects.Property)
+                        and isinstance(inferred.function, nodes.FunctionDef)
+                    ):
+                        return decorated_with_property(inferred.function)
     return False
 
 
@@ -1369,32 +1368,30 @@ def safe_infer(
     if not isinstance(value, util.UninferableBase):
         inferred_types.add(_get_python_type_of_node(value))
 
-    # pylint: disable = too-many-try-statements
     try:
         for inferred in infer_gen:
             inferred_type = _get_python_type_of_node(inferred)
             if inferred_type not in inferred_types:
                 return None  # If there is ambiguity on the inferred node.
-            if (
-                compare_constants
-                and isinstance(inferred, nodes.Const)
-                and isinstance(value, nodes.Const)
-                and inferred.value != value.value
-            ):
-                return None
-            if (
-                isinstance(inferred, nodes.FunctionDef)
-                and isinstance(value, nodes.FunctionDef)
-                and function_arguments_are_ambiguous(inferred, value)
-            ):
-                return None
-            if (
-                compare_constructors
-                and isinstance(inferred, nodes.ClassDef)
-                and isinstance(value, nodes.ClassDef)
-                and class_constructors_are_ambiguous(inferred, value)
-            ):
-                return None
+            match (compare_constants, compare_constructors, inferred, value):
+                case [True, _, nodes.Const(value=v1), nodes.Const(value=v2)] if (
+                    v1 != v2
+                ):
+                    return None
+                case [
+                    _,
+                    _,
+                    nodes.FunctionDef(),
+                    nodes.FunctionDef(),
+                ] if function_arguments_are_ambiguous(inferred, value):
+                    return None
+                case [
+                    _,
+                    True,
+                    nodes.ClassDef(),
+                    nodes.ClassDef(),
+                ] if class_constructors_are_ambiguous(inferred, value):
+                    return None
     except astroid.InferenceError:
         return None  # There is some kind of ambiguity
     except StopIteration:
@@ -1588,19 +1585,20 @@ def get_node_last_lineno(node: nodes.NodeNG) -> int:
     but for a node that has child statements (e.g. a method) this will be the lineno of the last
     child statement recursively.
     """
-    # 'finalbody' is always the last clause in a try statement, if present
-    if getattr(node, "finalbody", False):
-        return get_node_last_lineno(node.finalbody[-1])
-    # For if, while, and for statements 'orelse' is always the last clause.
-    # For try statements 'orelse' is the last in the absence of a 'finalbody'
-    if getattr(node, "orelse", False):
-        return get_node_last_lineno(node.orelse[-1])
-    # try statements have the 'handlers' last if there is no 'orelse' or 'finalbody'
-    if getattr(node, "handlers", False):
-        return get_node_last_lineno(node.handlers[-1])
-    # All compound statements have a 'body'
-    if getattr(node, "body", False):
-        return get_node_last_lineno(node.body[-1])
+    match node:
+        case nodes.NodeNG(finalbody=[*_, n]):
+            # 'finalbody' is always the last clause in a try statement, if present
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(orelse=[*_, n]):
+            # For if, while, and for statements 'orelse' is always the last clause.
+            # For try statements 'orelse' is the last in the absence of a 'finalbody'
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(handlers=[*_, n]):
+            # try statements have the 'handlers' last if there is no 'orelse' or 'finalbody'
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(body=[*_, n]):
+            # All compound statements have a 'body'
+            return get_node_last_lineno(n)
     # Not a compound statement
     return node.lineno  # type: ignore[no-any-return]
 
@@ -1629,6 +1627,7 @@ def is_node_in_type_annotation_context(node: nodes.NodeNG) -> bool:
                 parent_node.varargannotation,
                 parent_node.kwargannotation,
             ):
+                # TODO astroid iterator for Arguments
                 return True
             case nodes.FunctionDef(returns=n) if n == current_node:
                 return True
@@ -1962,27 +1961,20 @@ def in_type_checking_block(node: nodes.NodeNG) -> bool:
     for ancestor in node.node_ancestors():
         if not isinstance(ancestor, nodes.If):
             continue
-        if isinstance(ancestor.test, nodes.Name):
-            if ancestor.test.name != "TYPE_CHECKING":
-                continue
-            lookup_result = ancestor.test.lookup(ancestor.test.name)[1]
-            if not lookup_result:
-                return False
-            maybe_import_from = lookup_result[0]
-            if (
-                isinstance(maybe_import_from, nodes.ImportFrom)
-                and maybe_import_from.modname == "typing"
-            ):
-                return True
-            match safe_infer(ancestor.test):
-                case nodes.Const(value=False):
-                    return True
-        elif isinstance(ancestor.test, nodes.Attribute):
-            if ancestor.test.attrname != "TYPE_CHECKING":
-                continue
-            match safe_infer(ancestor.test.expr):
-                case nodes.Module(name="typing"):
-                    return True
+        match ancestor.test:
+            case nodes.Name(name="TYPE_CHECKING" as n):
+                match ancestor.test.lookup(n)[1]:
+                    case []:
+                        return False
+                    case [nodes.ImportFrom(modname="typing"), *_]:
+                        return True
+                match safe_infer(ancestor.test):
+                    case nodes.Const(value=False):
+                        return True
+            case nodes.Attribute(attrname="TYPE_CHECKING"):
+                match safe_infer(ancestor.test.expr):
+                    case nodes.Module(name="typing"):
+                        return True
 
     return False
 
@@ -2056,11 +2048,14 @@ def is_hashable(node: nodes.NodeNG) -> bool:
     # pylint: disable = too-many-try-statements
     try:
         for inferred in node.infer():
-            if isinstance(inferred, (nodes.ClassDef, util.UninferableBase)):
-                return True
-            if not hasattr(inferred, "igetattr"):
-                return True
-            hash_fn = next(inferred.igetattr("__hash__"))
+            match inferred:
+                case nodes.ClassDef() | util.UninferableBase():
+                    return True
+                case object(igetattr=igetattr):
+                    pass
+                case _:
+                    return True
+            hash_fn = next(igetattr("__hash__"))
             if hash_fn.parent is inferred:
                 return True
             if getattr(hash_fn, "value", True) is not None:
@@ -2184,11 +2179,13 @@ def is_terminating_func(node: nodes.Call) -> bool:
     """Detect call to exit(), quit(), os._exit(), sys.exit(), or
     functions annotated with `typing.NoReturn` or `typing.Never`.
     """
-    if (
-        not isinstance(node.func, nodes.Attribute)
-        and not (isinstance(node.func, nodes.Name))
-    ) or isinstance(node.parent, nodes.Lambda):
-        return False
+    match node:
+        case nodes.Call(parent=nodes.Lambda()):  # TODO
+            return False
+        case nodes.Call(func=nodes.Attribute() | nodes.Name()):
+            pass
+        case _:
+            return False
 
     try:
         for inferred in node.func.infer():

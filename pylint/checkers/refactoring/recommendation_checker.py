@@ -432,14 +432,12 @@ class RecommendationChecker(checkers.BaseChecker):
                 return
 
             # If % applied to another type than str, it's modulo and can't be replaced by formatting
-            if not hasattr(node.parent.left, "value") or not isinstance(
-                node.parent.left.value, str
-            ):
-                return
-
-            # Brackets can be inconvenient in f-string expressions
-            if "{" in node.parent.left.value or "}" in node.parent.left.value:
-                return
+            match node.parent.left:
+                case object(value=str(value)) if not ("{" in value or "}" in value):
+                    # Brackets can be inconvenient in f-string expressions
+                    pass
+                case _:
+                    return
 
             # If dicts or lists of length > 1 are used
             match utils.safe_infer(node.parent.right):

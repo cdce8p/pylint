@@ -11,9 +11,10 @@ import tokenize
 from collections.abc import Iterator
 from functools import cached_property, reduce
 from re import Pattern
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 import astroid
+import astroid.objects
 from astroid import bases, nodes
 from astroid.util import UninferableBase
 
@@ -558,6 +559,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     @staticmethod
     def _is_bool_const(node: nodes.Return | nodes.Assign) -> bool:
+        # return nodes.values match nodes.Const(value=bool())  # TODO match expr
         match node.value:
             case nodes.Const(value=bool()):
                 return True
@@ -866,19 +868,15 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         return isinstance(utils.safe_infer(test.ops[0][1]), nodes.Dict)
 
     def _check_consider_get(self, node: nodes.If) -> None:
-        if_block_ok = self._is_dict_get_block(node)
-        if if_block_ok and not node.orelse:
-            self.add_message("consider-using-get", node=node)
-        elif (
-            if_block_ok
-            and len(node.orelse) == 1
-            and isinstance(node.orelse[0], nodes.Assign)
-            and self._type_and_name_are_equal(
-                node.orelse[0].targets[0], node.body[0].targets[0]
-            )
-            and len(node.orelse[0].targets) == 1
-        ):
-            self.add_message("consider-using-get", node=node)
+        if not self._is_dict_get_block(node):
+            return
+        match node:
+            case nodes.If(orelse=[]):
+                self.add_message("consider-using-get", node=node)
+            case nodes.If(
+                body=[nodes.Assign(targets=[t1])], orelse=[nodes.Assign(targets=[t2])]
+            ) if self._type_and_name_are_equal(t1, t2):
+                self.add_message("consider-using-get", node=node)
 
     @utils.only_required_for_messages(
         "too-many-nested-blocks",
@@ -1051,7 +1049,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         if not node.exc:
             return
         exc = utils.safe_infer(node.exc)
-        if not exc or not isinstance(exc, (bases.Instance, nodes.ClassDef)):
+        if not isinstance(exc, (bases.Instance, nodes.ClassDef)):
             return
         if self._check_exception_inherit_from_stopiteration(exc):
             self.add_message("stop-iteration-return", node=node, confidence=INFERENCE)
@@ -1072,33 +1070,33 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 pass
             case _:
                 return
-        if name == "dict":
-            element = node.args[0].elt
-            if isinstance(element, nodes.Call):
-                return
 
-            # If we have an `IfExp` here where both the key AND value
-            # are different, then don't raise the issue. See #5588
-            if (
-                isinstance(element, nodes.IfExp)
-                and isinstance(element.body, (nodes.Tuple, nodes.List))
-                and len(element.body.elts) == 2
-                and isinstance(element.orelse, (nodes.Tuple, nodes.List))
-                and len(element.orelse.elts) == 2
-            ):
-                key1, value1 = element.body.elts
-                key2, value2 = element.orelse.elts
-                if (
-                    key1.as_string() != key2.as_string()
-                    and value1.as_string() != value2.as_string()
-                ):
-                    return
+        match name:
+            case "dict":
+                match element:
+                    case nodes.Call():
+                        return
+                    case nodes.IfExp(
+                        body=nodes.Tuple() | nodes.List() as body,
+                        orelse=nodes.Tuple() | nodes.List() as orelse,
+                    ) if (
+                        len(body.elts) == 2 and len(orelse.elts) == 2
+                    ):
+                        # If we have an `IfExp` here where both the key AND value
+                        # are different, then don't raise the issue. See #5588
+                        key1, value1 = body.elts
+                        key2, value2 = orelse.elts
+                        if (
+                            key1.as_string() != key2.as_string()
+                            and value1.as_string() != value2.as_string()
+                        ):
+                            return
 
-            message_name = "consider-using-dict-comprehension"
-            self.add_message(message_name, node=node)
-        elif name == "set":
-            message_name = "consider-using-set-comprehension"
-            self.add_message(message_name, node=node)
+                message_name = "consider-using-dict-comprehension"
+                self.add_message(message_name, node=node)
+            case "set":
+                message_name = "consider-using-set-comprehension"
+                self.add_message(message_name, node=node)
 
     def _check_consider_using_generator(self, node: nodes.Call) -> None:
         # 'any', 'all', definitely should use generator, while 'list', 'tuple',
@@ -1365,14 +1363,14 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             return
 
         for value in node.values:
-            if (
-                not isinstance(value, nodes.Compare)
-                or len(value.ops) != 1
-                or value.ops[0][0] not in allowed_ops[node.op]
-            ):
-                return
-            for comparable in value.left, value.ops[0][1]:
-                if isinstance(comparable, nodes.Call):
+            match value:
+                case nodes.Compare(left=nodes.Call()) | nodes.Compare(
+                    ops=[tuple((_, nodes.Call()))]
+                ):
+                    return
+                case nodes.Compare(ops=[tuple((op, _))]) if op in allowed_ops[node.op]:
+                    pass
+                case _:
                     return
 
         # Gather variables and values from comparisons
@@ -1741,10 +1739,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     def _name_to_concatenate(self, node: nodes.NodeNG) -> str | None:
         """Try to extract the name used in a concatenation loop."""
-        if isinstance(node, nodes.Name):
-            return cast("str | None", node.name)
-        if not isinstance(node, nodes.JoinedStr):
-            return None
+        match node:
+            case nodes.Name(name=name):
+                return name  # type: ignore[no-any-return]
+            case nodes.JoinedStr():
+                pass
+            case _:
+                return None
 
         match values := [
             value for value in node.values if isinstance(value, nodes.FormattedValue)
@@ -1756,6 +1757,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         # If there are more values in joined string than formatted values,
         # they are probably separators.
         # Allow them only if the option `suggest-join-with-non-empty-separator` is set
+        # TODO check condition len(values) is always 1
         with_separators = len(node.values) > len(values)
         if with_separators and not self._suggest_join_with_non_empty_separator:
             return None
@@ -1783,17 +1785,19 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             if isinstance(target, nodes.AssignName)
         }
 
-        is_concat_loop = (
-            aug_assign.op == "+="
-            and isinstance(aug_assign.target, nodes.AssignName)
-            and len(for_loop.body) == 1
-            and aug_assign.target.name in result_assign_names
-            and isinstance(assign.value, nodes.Const)
-            and isinstance(assign.value.value, str)
-            and self._name_to_concatenate(aug_assign.value) == target_name
-        )
-        if is_concat_loop:
-            self.add_message("consider-using-join", node=aug_assign)
+        match (aug_assign, assign.value):
+            case [  # TODO match expr
+                nodes.AugAssign(
+                    op="+=", target=nodes.AssignName(name=name), value=value
+                ),
+                nodes.Const(value=str()),
+            ] if (
+                name in result_assign_names
+                and self._name_to_concatenate(value) == target_name
+            ):
+                self.add_message(
+                    "consider-using-join", node=aug_assign
+                )  # TODO pyright unreachable
 
     @utils.only_required_for_messages("consider-using-join")
     def visit_augassign(self, node: nodes.AugAssign) -> None:
@@ -1810,50 +1814,55 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         self._check_unnecessary_list_index_lookup(node)
 
     def _check_unnecessary_comprehension(self, node: nodes.Comprehension) -> None:
-        if (
-            isinstance(node.parent, nodes.GeneratorExp)
-            or len(node.ifs) != 0
-            or len(node.parent.generators) != 1
-            or node.is_async
-        ):
-            return
+        match node:
+            case nodes.Comprehension(parent=nodes.GeneratorExp()):
+                return
+            case nodes.Comprehension(
+                parent=object(generators=[_]), ifs=[], is_async=False
+            ):
+                pass
+            case _:
+                return
 
-        if (
-            isinstance(node.parent, nodes.DictComp)
-            and isinstance(node.parent.key, nodes.Name)
-            and isinstance(node.parent.value, nodes.Name)
-            and isinstance(node.target, nodes.Tuple)
-            and all(isinstance(elt, nodes.AssignName) for elt in node.target.elts)
-        ):
-            expr_list = [node.parent.key.name, node.parent.value.name]
-            target_list = [elt.name for elt in node.target.elts]
+        match node:
+            case nodes.Comprehension(
+                target=nodes.Tuple(elts=elts),
+                parent=nodes.DictComp(
+                    key=nodes.Name(name=key_name),
+                    value=nodes.Name(name=value_name),
+                ),
+            ) if all(isinstance(elt, nodes.AssignName) for elt in elts):
+                # reveal_type(elts)
+                expr_list = [key_name, value_name]
+                target_list = [elt.name for elt in elts]
 
-        elif isinstance(node.parent, (nodes.ListComp, nodes.SetComp)):
-            expr = node.parent.elt
-            if isinstance(expr, nodes.Name):
-                expr_list = expr.name
-            elif isinstance(expr, nodes.Tuple):
-                if any(not isinstance(elt, nodes.Name) for elt in expr.elts):
-                    return
-                expr_list = [elt.name for elt in expr.elts]
-            else:
-                expr_list = []
-            target = node.parent.generators[0].target
-            target_list = (
-                target.name
-                if isinstance(target, nodes.AssignName)
-                else (
-                    [
-                        elt.name
-                        for elt in target.elts
-                        if isinstance(elt, nodes.AssignName)
-                    ]
-                    if isinstance(target, nodes.Tuple)
-                    else []
-                )
-            )
-        else:
-            return
+            case nodes.Comprehension(
+                parent=nodes.ListComp(elt=expr, generators=[object(target=target), *_])
+                | nodes.SetComp(elt=expr, generators=[object(target=target), *_])
+            ):
+                match expr:
+                    case nodes.Name(name=expr_list):
+                        pass
+                    case nodes.Tuple():
+                        if not all(isinstance(elt, nodes.Name) for elt in expr.elts):
+                            return
+                        expr_list = [elt.name for elt in expr.elts]
+                    case _:
+                        expr_list = []
+                match target:
+                    case nodes.AssignName(name=target_list):
+                        pass
+                    case nodes.Tuple():
+                        target_list = [
+                            elt.name
+                            for elt in target.elts
+                            if isinstance(elt, nodes.AssignName)
+                        ]
+                    case _:
+                        target_list = []
+
+            case _:
+                return
         if expr_list == target_list and expr_list:
             args: tuple[str] | None = None
             inferred = utils.safe_infer(node.iter)
@@ -1892,7 +1901,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         All of: condition, true_value and false_value should not be a complex boolean expression
         """
-        match node:
+        match node:  # TODO match expr
             case nodes.BoolOp(
                 op="or", values=[nodes.BoolOp(op="and", values=[_, v1]), v2]
             ) if not (isinstance(v2, nodes.BoolOp) or isinstance(v1, nodes.BoolOp)):
@@ -2042,7 +2051,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 return any(
                     self._is_node_return_ended(_child) for _child in all_but_handler
                 ) and all(self._is_node_return_ended(_child) for _child in handlers)
-            case nodes.Assert(test=nodes.Const(value=value)) if not value:
+            case nodes.Assert(test=nodes.Const(value=False)):
                 # consider assert False as a return node
                 return True
         # recurses on the children of the node
@@ -2104,9 +2113,11 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         if not node.body:
             return
 
-        last = node.body[-1]
-        if isinstance(last, nodes.Return) and len(node.body) == 1:
-            return
+        match node.body:
+            case [nodes.Return()]:
+                return
+            case [*_, last]:
+                pass
 
         while isinstance(last, (nodes.If, nodes.Try, nodes.ExceptHandler)):
             last = last.last_child()

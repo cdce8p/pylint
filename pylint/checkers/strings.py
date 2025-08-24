@@ -464,10 +464,11 @@ class StringFormatChecker(BaseChecker):
         #
         #    fmt = 'some string {}'.format
         #    fmt('arg')
-        if isinstance(node.func, nodes.Attribute) and not isinstance(
-            node.func.expr, nodes.Const
-        ):
-            return
+        match node.func:
+            case nodes.Attribute(expr=nodes.Const()):
+                pass
+            case nodes.Attribute():
+                return  # TODO not
         if node.starargs or node.kwargs:
             return
         try:

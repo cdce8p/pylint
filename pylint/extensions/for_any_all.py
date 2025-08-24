@@ -128,7 +128,12 @@ class ConsiderUsingAnyOrAllChecker(BaseChecker):
             return False
 
         node_before_loop_name = node_before_loop.targets[0].name
-        return (
+        # return (
+        #     first_target.name == node_before_loop_name
+        #     and node_after_loop match nodes.Return(value=nodes.Name(name=n))
+        #     and node_after_loop.value.name == node_before_loop_name
+        # )
+        return (  # TODO match expr
             first_target.name == node_before_loop_name
             and isinstance(node_after_loop, nodes.Return)
             and isinstance(node_after_loop.value, nodes.Name)

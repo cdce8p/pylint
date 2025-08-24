@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, TypeGuard
 
 import astroid.bases
 from astroid import nodes
@@ -299,7 +299,11 @@ class TypingChecker(BaseChecker):
     @staticmethod
     def _is_deprecated_union_annotation(
         annotation: nodes.NodeNG, union_name: str
-    ) -> bool:
+    ) -> TypeGuard[nodes.Subscript]:
+        # return (  # TODO match expression
+        #     annotation match nodes.Subscript(value=nodes.Name(name=n))
+        #     if n == union_name
+        # )
         match annotation:
             case nodes.Subscript(value=nodes.Name(name=n)) if n == union_name:
                 return True
@@ -494,7 +498,7 @@ class TypingChecker(BaseChecker):
                     and inferred.qname() in TYPING_NORETURN
                 )
                 # In Python 3.7 - 3.8, NoReturn is alias of '_SpecialForm'
-                or (
+                or (  # TODO match expr
                     isinstance(inferred, astroid.bases.BaseInstance)
                     and isinstance(inferred._proxied, nodes.ClassDef)
                     and inferred._proxied.qname() == "typing._SpecialForm"

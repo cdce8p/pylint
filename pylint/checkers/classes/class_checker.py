@@ -918,7 +918,7 @@ a metaclass class method.",
                 case nodes.AnnAssign(
                     target=nodes.AssignName(name=name), value=None
                 ) if (name not in slot_names):
-                    self.add_message(
+                    self.add_message(  # TODO pyright unreachable -> false-positive
                         "declare-non-slot",
                         args=child.target.name,
                         node=child.target,
@@ -939,7 +939,11 @@ a metaclass class method.",
             case [nodes.Dict(items=items), *_] if items:
                 for _, name_node in items:
                     # Exempt type annotations without value assignments
-                    if all(
+                    # if all(
+                    #     item.parent match nodes.AnnAssign(value=None)
+                    #     for item in ancestor.getattr(name_node.name)
+                    # )
+                    if all(  # TODO match expr
                         isinstance(item.parent, nodes.AnnAssign)
                         and item.parent.value is None
                         for item in ancestor.getattr(name_node.name)
@@ -1319,7 +1323,7 @@ a metaclass class method.",
                     except astroid.InferenceError:
                         return
                 try:
-                    if (
+                    if (  # TODO ClassPattern with dunder attributes doesn't work?
                         isinstance(inferred, (astroid.Instance, nodes.ClassDef))
                         and inferred.getattr("__get__")
                         and inferred.getattr("__set__")
@@ -1530,15 +1534,18 @@ a metaclass class method.",
             return False
         for slots in inferred_slots:
             # check if __slots__ is a valid type
-            if isinstance(slots, util.UninferableBase):
-                return False
-            if not is_iterable(slots) and not is_comprehension(slots):
-                return False
-            if isinstance(slots, nodes.Const):
-                return False
-            if not hasattr(slots, "itered"):
-                # we can't obtain the values, maybe a .deque?
-                return False
+            match slots:
+                case util.UninferableBase():
+                    return False
+                case _ if not is_iterable(slots) and not is_comprehension(slots):
+                    return False
+                case nodes.Const():
+                    return False
+                case object(itered=_):
+                    pass
+                case _:
+                    # we can't obtain the values, maybe a .deque?
+                    return False
 
         return True
 
@@ -1552,24 +1559,26 @@ a metaclass class method.",
             return
         for slots in inferred_slots:
             # check if __slots__ is a valid type
-            if isinstance(slots, util.UninferableBase):
-                continue
-            if not is_iterable(slots) and not is_comprehension(slots):
-                self.add_message("invalid-slots", node=node)
-                continue
-
-            if isinstance(slots, nodes.Const):
-                # a string, ignore the following checks
-                self.add_message("single-string-used-for-slots", node=node)
-                continue
-            if not hasattr(slots, "itered"):
-                # we can't obtain the values, maybe a .deque?
-                continue
+            match slots:
+                case util.UninferableBase():
+                    continue
+                case _ if not is_iterable(slots) and not is_comprehension(slots):
+                    self.add_message("invalid-slots", node=node)
+                    continue
+                case nodes.Const():
+                    # a string, ignore the following checks
+                    self.add_message("single-string-used-for-slots", node=node)
+                    continue
+                case object(itered=itered):
+                    pass
+                case _:
+                    # we can't obtain the values, maybe a .deque?
+                    continue
 
             if isinstance(slots, nodes.Dict):
                 values = [item[0] for item in slots.items]
             else:
-                values = slots.itered()
+                values = itered()
             if isinstance(values, util.UninferableBase):
                 continue
             for elt in values:
@@ -1652,16 +1661,16 @@ a metaclass class method.",
                     continue
 
             # Check if we have a conflict with a class variable.
-            class_variable = node.locals.get(inferred.value)
-            if class_variable:
-                # Skip annotated assignments which don't conflict at all with slots.
-                if len(class_variable) == 1:
-                    parent = class_variable[0].parent
-                    if isinstance(parent, nodes.AnnAssign) and parent.value is None:
-                        return
-                self.add_message(
-                    "class-variable-slots-conflict", args=(inferred.value,), node=elt
-                )
+            match class_variable := node.locals.get(inferred.value):
+                case [object(parent=nodes.AnnAssign(value=None))]:
+                    # Skip annotated assignments which don't conflict at all with slots.
+                    return
+                case _ if class_variable:
+                    self.add_message(
+                        "class-variable-slots-conflict",
+                        args=(inferred.value,),
+                        node=elt,
+                    )
 
     def leave_functiondef(self, node: nodes.FunctionDef) -> None:
         """On method node, check if this method couldn't be a function.
@@ -1697,17 +1706,19 @@ a metaclass class method.",
     def _check_super_without_brackets(self, node: nodes.Attribute) -> None:
         """Check if there is a function call on a super call without brackets."""
         # Check if attribute call is in frame definition in class definition
-        frame = node.frame()
-        if not isinstance(frame, nodes.FunctionDef):
-            return
-        if not isinstance(frame.parent.frame(), nodes.ClassDef):
-            return
-        if not isinstance(node.parent, nodes.Call):
-            return
-        if not isinstance(node.expr, nodes.Name):
-            return
-        if node.expr.name == "super":
-            self.add_message("super-without-brackets", node=node.expr, confidence=HIGH)
+        # if (
+        #     (node match nodes.Attribute(parent=nodes.Call(), expr=nodes.Name(name="super")))
+        #     and (node.frame() match nodes.FunctionDef(parent=parent))
+        #     and isinstance(parent.frame(), nodes.ClassDef)
+        # ):
+        match (node, node.frame()):
+            case [  # TODO match expr
+                nodes.Attribute(parent=nodes.Call(), expr=nodes.Name(name="super")),
+                nodes.FunctionDef(parent=parent),
+            ] if isinstance(parent.frame(), nodes.ClassDef):
+                self.add_message(
+                    "super-without-brackets", node=node.expr, confidence=HIGH
+                )
 
     @only_required_for_messages(
         "assigning-non-slot", "invalid-class-object", "access-member-before-definition"
@@ -2228,7 +2239,6 @@ a metaclass class method.",
             match expr.expr:
                 case nodes.Call(func=nodes.Name(name="super")):
                     return
-            # pylint: disable = too-many-try-statements
             try:
                 for klass in expr.expr.infer():
                     if isinstance(klass, util.UninferableBase):
@@ -2240,15 +2250,13 @@ a metaclass class method.",
                     # base = super()
                     # base.__init__(...)
 
-                    if (
-                        isinstance(klass, astroid.Instance)
-                        and isinstance(klass._proxied, nodes.ClassDef)
-                        and is_builtin_object(klass._proxied)
-                        and klass._proxied.name == "super"
-                    ):
-                        return
-                    if isinstance(klass, astroid.objects.Super):
-                        return
+                    match klass:
+                        case astroid.Instance(
+                            _proxied=nodes.ClassDef(name="super") as p
+                        ) if is_builtin_object(p):
+                            return
+                        case astroid.objects.Super():
+                            return
                     try:
                         method = not_called_yet.pop(klass)
                         # Record that the class' init has been called

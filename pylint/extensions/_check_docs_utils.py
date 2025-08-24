@@ -80,12 +80,10 @@ def returns_something(return_node: nodes.Return) -> bool:
     :return: True if the return node returns a value other than None,
         False otherwise.
     """
-    returns = return_node.value
-
-    if returns is None:
-        return False
-
-    return not (isinstance(returns, nodes.Const) and returns.value is None)
+    match return_node.value:
+        case nodes.Const(value=None) | None:
+            return False
+    return True
 
 
 def _get_raise_target(node: nodes.NodeNG) -> nodes.NodeNG | UninferableBase | None:

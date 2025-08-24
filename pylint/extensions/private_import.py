@@ -144,19 +144,21 @@ class PrivateImportChecker(BaseChecker):
             # illegal usages later
             name_assignments = []
             for usage_node in node.locals[name]:
-                if isinstance(usage_node, nodes.AssignName) and isinstance(
-                    usage_node.parent, (nodes.AnnAssign, nodes.Assign)
-                ):
-                    match assign_parent := usage_node.parent:
-                        case nodes.AnnAssign():
-                            name_assignments.append(assign_parent)
-                            private_name = self._populate_type_annotations_annotation(
-                                assign_parent.annotation,
-                                all_used_type_annotations,
-                            )
-                        case nodes.Assign():
-                            name_assignments.append(assign_parent)
-
+                match usage_node:
+                    case nodes.AssignName(
+                        parent=nodes.AnnAssign() | nodes.Assign() as assign_parent
+                    ):
+                        match assign_parent:
+                            case nodes.AnnAssign():
+                                name_assignments.append(assign_parent)
+                                private_name = (
+                                    self._populate_type_annotations_annotation(
+                                        assign_parent.annotation,
+                                        all_used_type_annotations,
+                                    )
+                                )
+                            case nodes.Assign():
+                                name_assignments.append(assign_parent)
                 if isinstance(usage_node, nodes.FunctionDef):
                     self._populate_type_annotations_function(
                         usage_node, all_used_type_annotations
@@ -233,11 +235,22 @@ class PrivateImportChecker(BaseChecker):
                     pass
                 case _:
                     continue
+            # if not (  # TODO match expression
+            #     assignment.value match (
+            #         nodes.Call(func=current_attribute)
+            #         | (nodes.Attribute() as current_attribute)
+            #         | nodes.Name(name=current_attribute)
+            #     )
+            # ):
+            #     continue
             while isinstance(current_attribute, (nodes.Attribute, nodes.Call)):
-                if isinstance(current_attribute, nodes.Call):
-                    current_attribute = current_attribute.func
-                if not isinstance(current_attribute, nodes.Name):
-                    current_attribute = current_attribute.expr
+                match current_attribute:
+                    case nodes.Call(func=func):
+                        current_attribute = func
+                    case nodes.Name():  # TODO not
+                        pass
+                    case _:
+                        current_attribute = current_attribute.expr
             if (
                 isinstance(current_attribute, nodes.Name)
                 and current_attribute.name == private_name

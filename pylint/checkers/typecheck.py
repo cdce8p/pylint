@@ -666,15 +666,26 @@ def _no_context_variadic_keywords(node: nodes.Call, scope: nodes.Lambda) -> bool
     statement = node.statement()
     variadics = []
 
-    if (
-        isinstance(scope, nodes.Lambda) and not isinstance(scope, nodes.FunctionDef)
-    ) or isinstance(statement, nodes.With):
-        variadics = list(node.keywords or []) + node.kwargs
-    elif isinstance(statement, (nodes.Return, nodes.Expr, nodes.Assign)) and isinstance(
-        statement.value, nodes.Call
-    ):
-        call = statement.value
-        variadics = list(call.keywords or []) + call.kwargs
+    match (scope, statement):
+        case [nodes.Lambda(), _] | [_, nodes.With()]:  # TODO incomplete translation
+            variadics = list(node.keywords or []) + node.kwargs
+        case [
+            _,
+            nodes.Return(value=nodes.Call())
+            | nodes.Expr(value=nodes.Call())
+            | nodes.Assign(value=nodes.Call()),
+        ]:
+            call = statement.value
+            variadics = list(call.keywords or []) + call.kwargs
+    # if (
+    #     isinstance(scope, nodes.Lambda) and not isinstance(scope, nodes.FunctionDef)
+    # ) or isinstance(statement, nodes.With):
+    #     variadics = list(node.keywords or []) + node.kwargs
+    # elif isinstance(statement, (nodes.Return, nodes.Expr, nodes.Assign)) and isinstance(
+    #     statement.value, nodes.Call
+    # ):
+    #     call = statement.value
+    #     variadics = list(call.keywords or []) + call.kwargs
 
     return _no_context_variadic(node, scope.args.kwarg, nodes.Keyword, variadics)
 
@@ -1288,7 +1299,7 @@ accessed. Python regular expressions are accepted.",
 
     @staticmethod
     def _is_builtin_no_return(node: nodes.Assign) -> bool:
-        match node.value:
+        match node.value:  # TODO match expr
             case nodes.Call(func=nodes.Attribute(expr=e, attrname=a)) if (
                 bool(inferred := utils.safe_infer(e))
                 and isinstance(inferred, bases.Instance)
@@ -2159,18 +2170,16 @@ accessed. Python regular expressions are accepted.",
         if is_inside_abstract_class(node):
             return
 
-        inferred = safe_infer(node.value)
-
-        if inferred is None or isinstance(inferred, util.UninferableBase):
-            return
-
-        if getattr(inferred, "decorators", None):
-            first_decorator = astroid.util.safe_infer(inferred.decorators.nodes[0])
-            if isinstance(first_decorator, nodes.ClassDef):
-                inferred = first_decorator.instantiate_class()
-            else:
-                return  # It would be better to handle function
-                # decorators, but let's start slow.
+        match inferred := safe_infer(node.value):
+            case _ if not inferred:
+                return
+            case object(decorators=d) if d:
+                first_decorator = astroid.util.safe_infer(d.nodes[0])
+                if isinstance(first_decorator, nodes.ClassDef):
+                    inferred = first_decorator.instantiate_class()
+                else:
+                    return  # It would be better to handle function
+                    # decorators, but let's start slow.
 
         if (
             supported_protocol
@@ -2262,12 +2271,11 @@ class IterableChecker(BaseChecker):
         if not inferred_func.decorators:
             return False
         for decorator in inferred_func.decorators.nodes:
-            inferred_decorator = safe_infer(decorator)
-            if not isinstance(inferred_decorator, nodes.FunctionDef):
-                continue
-            if inferred_decorator.qname() != ASYNCIO_COROUTINE:
-                continue
-            return True
+            match inferred_decorator := safe_infer(decorator):
+                case nodes.FunctionDef() if (
+                    inferred_decorator.qname() == ASYNCIO_COROUTINE
+                ):
+                    return True
         return False
 
     def _check_iterable(self, node: nodes.NodeNG, check_async: bool = False) -> None:

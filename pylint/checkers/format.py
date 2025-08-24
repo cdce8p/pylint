@@ -529,10 +529,13 @@ class FormatChecker(BaseTokenChecker, BaseRawFileChecker):
     def _is_first_node_in_else_finally_body(
         self, node: nodes.NodeNG, parent: nodes.Try
     ) -> bool:
-        if parent.orelse and node == parent.orelse[0]:
-            return True
-        if parent.finalbody and node == parent.finalbody[0]:
-            return True
+        match parent:
+            case nodes.Try(orelse=[n1, *_]) if node == n1:
+                return True
+            case nodes.Try(finalbody=[n2, *_]) if (
+                node == n2
+            ):  # TODO captured var doesn't get overridden
+                return True
         return False
 
     def _infer_else_finally_line_number(
@@ -565,7 +568,7 @@ class FormatChecker(BaseTokenChecker, BaseRawFileChecker):
             case nodes.Expr(
                 parent=nodes.FunctionDef() | nodes.ClassDef(),
                 value=nodes.Const(value=v),
-            ) if (
+            ) if (  # TODO black
                 v is Ellipsis
             ):
                 # Functions stubs and class with ``Ellipsis`` as body are exempted.
