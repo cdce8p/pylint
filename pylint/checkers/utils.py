@@ -1525,8 +1525,11 @@ def is_registered_in_singledispatch_function(node: nodes.FunctionDef) -> bool:
             case _:
                 continue
 
-        if not (isinstance(func, nodes.Attribute) and func.attrname == "register"):
-            continue
+        match func:
+            case nodes.Attribute(attrname="register"):
+                pass
+            case _:
+                continue
 
         try:
             func_def = next(func.expr.infer())
@@ -1548,8 +1551,11 @@ def find_inferred_fn_from_register(node: nodes.NodeNG) -> nodes.FunctionDef | No
         case _:
             return None
 
-    if not (isinstance(func, nodes.Attribute) and func.attrname == "register"):
-        return None
+    match func:
+        case nodes.Attribute(attrname="register"):
+            pass
+        case _:
+            return None
 
     func_def = safe_infer(func.expr)
     if not isinstance(func_def, nodes.FunctionDef):

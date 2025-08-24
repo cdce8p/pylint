@@ -742,10 +742,11 @@ class BasicChecker(_BasicChecker):
         """Check duplicate value in set."""
         values = set()
         for v in node.elts:
-            if isinstance(v, nodes.Const):
-                value = v.value
-            else:
-                continue
+            match v:
+                case nodes.Const(value=value):
+                    pass
+                case _:
+                    continue
             if value in values:
                 self.add_message(
                     "duplicate-value", node=node, args=value, confidence=HIGH
