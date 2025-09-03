@@ -33,6 +33,8 @@ jobs:
           permission-contents: write # push branch to Github
           permission-pull-requests: write # create PR / add comment for manual backport
           permission-workflows: write # modify files in .github/workflows
-      - uses: tibdex/backport@9565281eda0731b1d20c4025c43339fb0a23812e # v2.0.4
+      - uses: cdce8p/pylint-backport@v2.1.1
         with:
           github_token: ${{ steps.app-token.outputs.token }}
+          user_name: ${{ vars.BACKPORT_USER_NAME }}
+          user_email: ${{ vars.BACKPORT_USER_EMAIL }}
