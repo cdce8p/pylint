@@ -4,6 +4,8 @@
 
 """Variables checkers for Python code."""
 
+# Some new comment
+
 from __future__ import annotations
 
 import copy
