@@ -167,20 +167,19 @@ class CodeStyleChecker(BaseChecker):
 
     def _check_dict_consider_namedtuple_dataclass(self, node: nodes.Dict) -> None:
         """Check if dictionary values can be replaced by Namedtuple or Dataclass."""
-        if not (
-            (
-                isinstance(node.parent, (nodes.Assign, nodes.AnnAssign))
-                and isinstance(node.parent.parent, nodes.Module)
-            )
-            or (
-                isinstance(node.parent, nodes.AnnAssign)
-                and isinstance(node.parent.target, nodes.AssignName)
-                and utils.is_assign_name_annotated_with(node.parent.target, "Final")
-            )
-        ):
-            # If dict is not part of an 'Assign' or 'AnnAssign' node in
-            # a module context OR 'AnnAssign' with 'Final' annotation, skip check.
-            return
+        match node.parent:
+            case nodes.Assign(parent=nodes.Module()) | nodes.AnnAssign(
+                parent=nodes.Module()
+            ):
+                pass
+            case nodes.AnnAssign(
+                target=nodes.AssignName() as target
+            ) if utils.is_assign_name_annotated_with(target, "Final"):
+                pass
+            case _:
+                # If dict is not part of an 'Assign' or 'AnnAssign' node in
+                # a module context OR 'AnnAssign' with 'Final' annotation, skip check.
+                return
 
         # All dict_values are itself dict nodes
         if len(node.items) > 1 and all(

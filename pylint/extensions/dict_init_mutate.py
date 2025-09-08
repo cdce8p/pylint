@@ -35,6 +35,21 @@ class DictInitMutateChecker(BaseChecker):
 
         At this time, detecting nested mutation is not supported.
         """
+        # if (  # TODO match expr
+        #     (
+        #         node match nodes.Assign(
+        #             targets=[nodes.AssignName(name=dict_name)], value=nodes.Dict()
+        #         )
+        #     )
+        #     and (
+        #         node.next_sibling() match nodes.Assign(
+        #             targets=[nodes.Subscript(value=nodes.Name(name=name))]
+        #         )
+        #     )
+        #     and name == dict_name.name
+        # ):
+        #     self.add_message("dict-init-mutate", node=node, confidence=HIGH)
+
         match node:
             case nodes.Assign(
                 targets=[nodes.AssignName(name=dict_name)], value=nodes.Dict()

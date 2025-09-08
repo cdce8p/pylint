@@ -694,10 +694,11 @@ class StdlibChecker(DeprecatedMixin, BaseChecker):
                 continue
             if inferred.root().name in OPEN_MODULE:
                 open_func_name: str | None = None
-                if isinstance(node.func, nodes.Name):
-                    open_func_name = node.func.name
-                if isinstance(node.func, nodes.Attribute):
-                    open_func_name = node.func.attrname
+                match node.func:
+                    case nodes.Name(name=open_func_name) | nodes.Attribute(
+                        attrname=open_func_name
+                    ):
+                        pass
                 if open_func_name in OPEN_FILES_FUNCS:
                     self._check_open_call(node, inferred.root().name, open_func_name)
             elif inferred.root().name == UNITTEST_CASE:

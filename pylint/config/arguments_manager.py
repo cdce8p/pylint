@@ -365,12 +365,11 @@ class _ArgumentsManager:
                         continue
 
                 # Tomlkit doesn't support regular expressions
-                if isinstance(value, re.Pattern):
-                    value = value.pattern
-                elif isinstance(value, (list, tuple)) and isinstance(
-                    value[0], re.Pattern
-                ):
-                    value = [i.pattern for i in value]
+                match value:
+                    case re.Pattern():
+                        value = value.pattern
+                    case [re.Pattern(), *_]:
+                        value = [i.pattern for i in value]
 
                 # Handle tuples that should be strings
                 if optdict.get("type") == "py_version":

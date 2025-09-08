@@ -40,18 +40,18 @@ class EllipsisChecker(BaseChecker):
            For example: A function consisting of an ellipsis followed by a
            return statement on the next line.
         """
-        if (
-            node.pytype() == "builtins.Ellipsis"
-            and isinstance(node.parent, nodes.Expr)
-            and (
-                (
-                    isinstance(node.parent.parent, (nodes.ClassDef, nodes.FunctionDef))
-                    and node.parent.parent.doc_node
-                )
-                or len(node.parent.parent.body) > 1
-            )
-        ):
-            self.add_message("unnecessary-ellipsis", node=node)
+        if not node.pytype() == "builtins.Ellipsis":
+            return
+        match node.parent:  # TODO revert
+            case nodes.Expr(
+                parent=nodes.ClassDef(doc_node=d) | nodes.FunctionDef(doc_node=d)
+            ) if d:
+                pass
+            case nodes.Expr(parent=object(body=[_, _, *_])):
+                pass
+            case _:
+                return
+        self.add_message("unnecessary-ellipsis", node=node)
 
 
 def register(linter: PyLinter) -> None:

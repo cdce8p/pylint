@@ -927,56 +927,50 @@ scope_type : {self.scope_type}
 
     @staticmethod
     def _defines_name_raises_or_returns(name: str, node: nodes.NodeNG) -> bool:
-        if isinstance(node, (nodes.Raise, nodes.Assert, nodes.Return, nodes.Continue)):
-            return True
-        if isinstance(node, nodes.Expr) and isinstance(node.value, nodes.Call):
-            if utils.is_terminating_func(node.value):
+        match node:
+            case nodes.Raise() | nodes.Assert() | nodes.Return() | nodes.Continue():
                 return True
-            if (
-                isinstance(node.value.func, nodes.Name)
-                and node.value.func.name == "assert_never"
+            case nodes.Expr(value=nodes.Call()):
+                if utils.is_terminating_func(node.value):
+                    return True
+                if (
+                    isinstance(node.value.func, nodes.Name)
+                    and node.value.func.name == "assert_never"
+                ):
+                    return True
+            case nodes.AnnAssign(value=v, target=nodes.AssignName(name=n)) if (
+                v and n == name
             ):
                 return True
-        if (
-            isinstance(node, nodes.AnnAssign)
-            and node.value
-            and isinstance(node.target, nodes.AssignName)
-            and node.target.name == name
-        ):
-            return True
-        if isinstance(node, nodes.Assign):
-            for target in node.targets:
-                for elt in utils.get_all_elements(target):
-                    if isinstance(elt, nodes.Starred):
-                        elt = elt.value
-                    if isinstance(elt, nodes.AssignName) and elt.name == name:
-                        return True
-        if isinstance(node, nodes.If):
-            if any(
-                child_named_expr.target.name == name
-                for child_named_expr in node.nodes_of_class(nodes.NamedExpr)
+            case nodes.Assign():
+                for target in node.targets:
+                    for elt in utils.get_all_elements(target):
+                        if isinstance(elt, nodes.Starred):
+                            elt = elt.value
+                        if isinstance(elt, nodes.AssignName) and elt.name == name:
+                            return True
+            case nodes.If():
+                if any(
+                    child_named_expr.target.name == name
+                    for child_named_expr in node.nodes_of_class(nodes.NamedExpr)
+                ):
+                    return True
+            case nodes.Import() | nodes.ImportFrom() if any(
+                (node_name[1] and node_name[1] == name)
+                or (node_name[0] == name)
+                or (node_name[0].startswith(name + "."))
+                for node_name in node.names
             ):
                 return True
-        if isinstance(node, (nodes.Import, nodes.ImportFrom)) and any(
-            (node_name[1] and node_name[1] == name)
-            or (node_name[0] == name)
-            or (node_name[0].startswith(name + "."))
-            for node_name in node.names
-        ):
-            return True
-        if isinstance(node, nodes.With) and any(
-            isinstance(item[1], nodes.AssignName) and item[1].name == name
-            for item in node.items
-        ):
-            return True
-        if isinstance(node, (nodes.ClassDef, nodes.FunctionDef)) and node.name == name:
-            return True
-        if (
-            isinstance(node, nodes.ExceptHandler)
-            and node.name
-            and node.name.name == name
-        ):
-            return True
+            case nodes.With() if any(
+                isinstance(item[1], nodes.AssignName) and item[1].name == name
+                for item in node.items
+            ):
+                return True
+            case nodes.ClassDef() | nodes.FunctionDef() if node.name == name:
+                return True
+            case nodes.ExceptHandler(name=object(name=n)) if n == name:  # TODO
+                return True
         return False
 
     @staticmethod
@@ -1924,21 +1918,18 @@ class VariablesChecker(BaseChecker):
             ):
                 if not utils.node_ignores_exception(node, NameError):
                     # Handle postponed evaluation of annotations
-                    if not (
-                        self._postponed_evaluation_enabled
-                        and isinstance(
-                            stmt,
-                            (
-                                nodes.AnnAssign,
-                                nodes.FunctionDef,
-                                nodes.Arguments,
-                            ),
-                        )
-                        and node.name in node.root().locals
-                    ):
-                        if defined_by_stmt:
-                            return (VariableVisitConsumerAction.CONTINUE, [node])
-                        return (VariableVisitConsumerAction.CONTINUE, None)
+                    match stmt:
+                        case (
+                            nodes.AnnAssign() | nodes.FunctionDef() | nodes.Arguments()
+                        ) if (
+                            self._postponed_evaluation_enabled
+                            and node.name in node.root().locals
+                        ):
+                            pass
+                        case _:
+                            if defined_by_stmt:
+                                return (VariableVisitConsumerAction.CONTINUE, [node])
+                            return (VariableVisitConsumerAction.CONTINUE, None)
 
             elif base_scope_type != "lambda":
                 # E0601 may *not* occurs in lambda scope.
@@ -1946,28 +1937,31 @@ class VariablesChecker(BaseChecker):
                 # Skip postponed evaluation of annotations
                 # and unevaluated annotations inside a function body
                 # as well as TypeAlias nodes.
-                if not (
-                    self._postponed_evaluation_enabled  # noqa: RUF021
-                    and (
-                        isinstance(stmt, nodes.AnnAssign)
-                        or isinstance(stmt, nodes.FunctionDef)  # noqa: RUF021
-                        and node
-                        not in {
-                            *(stmt.args.defaults or ()),
-                            *(stmt.args.kw_defaults or ()),
-                        }
-                    )
-                    or isinstance(stmt, nodes.AnnAssign)  # noqa: RUF021
-                    and utils.get_node_first_ancestor_of_type(stmt, nodes.FunctionDef)
-                    or isinstance(stmt, nodes.TypeAlias)
-                ):
-                    self.add_message(
-                        "used-before-assignment",
-                        args=node.name,
-                        node=node,
-                        confidence=HIGH,
-                    )
-                    return (VariableVisitConsumerAction.RETURN, found_nodes)
+                match stmt:
+                    case nodes.AnnAssign() if (
+                        self._postponed_evaluation_enabled
+                        or utils.get_node_first_ancestor_of_type(
+                            stmt, nodes.FunctionDef
+                        )
+                    ):
+                        pass
+                    case (
+                        nodes.FunctionDef()
+                    ) if self._postponed_evaluation_enabled and node not in {
+                        *(stmt.args.defaults or ()),
+                        *(stmt.args.kw_defaults or ()),
+                    }:
+                        pass
+                    case nodes.TypeAlias():
+                        pass
+                    case _:
+                        self.add_message(
+                            "used-before-assignment",
+                            args=node.name,
+                            node=node,
+                            confidence=HIGH,
+                        )
+                        return (VariableVisitConsumerAction.RETURN, found_nodes)
 
             elif base_scope_type == "lambda":
                 # E0601 can occur in class-level scope in lambdas, as in
@@ -2421,18 +2415,21 @@ class VariablesChecker(BaseChecker):
         """Check if `defstmt` has the potential to use and assign a name in the
         same statement.
         """
-        if isinstance(defstmt, nodes.Match):
-            return any(case.guard for case in defstmt.cases)
-        if isinstance(defstmt, nodes.IfExp):
-            return True
-        if isinstance(defstmt, nodes.TypeAlias):
-            return True
-        if isinstance(defstmt.value, nodes.BaseContainer):
-            return any(
-                VariablesChecker._maybe_used_and_assigned_at_once(elt)
-                for elt in defstmt.value.elts
-                if isinstance(elt, (*NODES_WITH_VALUE_ATTR, nodes.IfExp, nodes.Match))
-            )
+        match defstmt:
+            case nodes.Match():
+                return any(case.guard for case in defstmt.cases)
+            case nodes.IfExp():
+                return True
+            case nodes.TypeAlias():
+                return True
+            case object(value=nodes.BaseContainer(elts=elts)):
+                return any(
+                    VariablesChecker._maybe_used_and_assigned_at_once(elt)
+                    for elt in elts
+                    if isinstance(
+                        elt, (*NODES_WITH_VALUE_ATTR, nodes.IfExp, nodes.Match)
+                    )
+                )
         match value := defstmt.value:
             case nodes.IfExp():
                 return True
@@ -2696,29 +2693,25 @@ class VariablesChecker(BaseChecker):
                 return
             # TODO: 4.0: Consider using utils.is_terminating_func
             # after merging it with RefactoringChecker._is_function_def_never_returning
-            if isinstance(else_stmt, nodes.Expr) and isinstance(
-                else_stmt.value, nodes.Call
-            ):
-                inferred_func = utils.safe_infer(else_stmt.value.func)
-                if (
-                    isinstance(inferred_func, nodes.FunctionDef)
-                    and inferred_func.returns
-                ):
-                    inferred_return = utils.safe_infer(inferred_func.returns)
-                    if isinstance(
-                        inferred_return, nodes.FunctionDef
-                    ) and inferred_return.qname() in {
-                        *TYPING_NORETURN,
-                        *TYPING_NEVER,
-                        "typing._SpecialForm",
-                    }:
-                        return
-                    # typing_extensions.NoReturn returns a _SpecialForm
-                    if (
-                        isinstance(inferred_return, bases.Instance)
-                        and inferred_return.qname() == "typing._SpecialForm"
-                    ):
-                        return
+            match else_stmt:  # TODO match expr
+                case nodes.Expr(value=nodes.Call()):
+                    match utils.safe_infer(else_stmt.value.func):
+                        case nodes.FunctionDef(returns=r) if r:
+                            inferred_return = utils.safe_infer(r)
+                            if isinstance(
+                                inferred_return, nodes.FunctionDef
+                            ) and inferred_return.qname() in {
+                                *TYPING_NORETURN,
+                                *TYPING_NEVER,
+                                "typing._SpecialForm",
+                            }:
+                                return
+                            # typing_extensions.NoReturn returns a _SpecialForm
+                            if (
+                                isinstance(inferred_return, bases.Instance)
+                                and inferred_return.qname() == "typing._SpecialForm"
+                            ):
+                                return
 
         maybe_walrus = utils.get_node_first_ancestor_of_type(node, nodes.NamedExpr)
         if maybe_walrus:
@@ -2791,11 +2784,15 @@ class VariablesChecker(BaseChecker):
         if self._is_name_ignored(stmt, name):
             return
         # Ignore names that were added dynamically to the Function scope
-        match node:
+        match node:  # TODO match expr
             case nodes.FunctionDef(locals={"__class__": [nodes.ClassDef()]}) if (
                 name == "__class__"
             ):
                 return
+        # if name == "__class__" and (
+        #     node match nodes.FunctionDef(locals={"__class__": [nodes.ClassDef()]})
+        # ):
+        #     return
 
         # Ignore names imported by the global statement.
         if isinstance(stmt, (nodes.Global, nodes.Import, nodes.ImportFrom)):
@@ -2826,11 +2823,12 @@ class VariablesChecker(BaseChecker):
                     return
             self._check_unused_arguments(name, node, stmt, argnames, nonlocal_names)
         else:
-            if stmt.parent and isinstance(
-                stmt.parent, (nodes.Assign, nodes.AnnAssign, nodes.Tuple, nodes.For)
-            ):
-                if name in nonlocal_names:
-                    return
+            match stmt.parent:
+                case (
+                    nodes.Assign() | nodes.AnnAssign() | nodes.Tuple() | nodes.For()
+                ):  # TODO
+                    if name in nonlocal_names:
+                        return
 
             qname = asname = None
             if isinstance(stmt, (nodes.Import, nodes.ImportFrom)):
@@ -2884,7 +2882,7 @@ class VariablesChecker(BaseChecker):
         name: str,
     ) -> re.Pattern[str] | re.Match[str] | None:
         authorized_rgx = self.linter.config.dummy_variables_rgx
-        match stmt:
+        match stmt:  # TODO match expr
             case nodes.AssignName(parent=nodes.Arguments()) | nodes.Arguments():
                 regex: re.Pattern[str] = self.linter.config.ignored_argument_names
             case _:
@@ -3107,7 +3105,7 @@ class VariablesChecker(BaseChecker):
         match (inferred, node.value):
             case [util.UninferableBase(), _]:
                 return
-            case [
+            case [  # TODO match expr
                 nodes.NodeNG(parent=nodes.Arguments(vararg=vararg)),
                 nodes.Name(name=name),
             ] if (

@@ -1591,19 +1591,20 @@ def get_node_last_lineno(node: nodes.NodeNG) -> int:
     but for a node that has child statements (e.g. a method) this will be the lineno of the last
     child statement recursively.
     """
-    # 'finalbody' is always the last clause in a try statement, if present
-    if getattr(node, "finalbody", False):
-        return get_node_last_lineno(node.finalbody[-1])
-    # For if, while, and for statements 'orelse' is always the last clause.
-    # For try statements 'orelse' is the last in the absence of a 'finalbody'
-    if getattr(node, "orelse", False):
-        return get_node_last_lineno(node.orelse[-1])
-    # try statements have the 'handlers' last if there is no 'orelse' or 'finalbody'
-    if getattr(node, "handlers", False):
-        return get_node_last_lineno(node.handlers[-1])
-    # All compound statements have a 'body'
-    if getattr(node, "body", False):
-        return get_node_last_lineno(node.body[-1])
+    match node:
+        case nodes.NodeNG(finalbody=[*_, n]):
+            # 'finalbody' is always the last clause in a try statement, if present
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(orelse=[*_, n]):
+            # For if, while, and for statements 'orelse' is always the last clause.
+            # For try statements 'orelse' is the last in the absence of a 'finalbody'
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(handlers=[*_, n]):
+            # try statements have the 'handlers' last if there is no 'orelse' or 'finalbody'
+            return get_node_last_lineno(n)
+        case nodes.NodeNG(body=[*_, n]):
+            # All compound statements have a 'body'
+            return get_node_last_lineno(n)
     # Not a compound statement
     return node.lineno  # type: ignore[no-any-return]
 
@@ -1988,15 +1989,11 @@ def in_type_checking_block(node: nodes.NodeNG) -> bool:
             continue
         match ancestor.test:
             case nodes.Name(name="TYPE_CHECKING" as name):
-                lookup_result = ancestor.test.lookup(name)[1]
-                if not lookup_result:
-                    return False
-                maybe_import_from = lookup_result[0]
-                if (
-                    isinstance(maybe_import_from, nodes.ImportFrom)
-                    and maybe_import_from.modname == "typing"
-                ):
-                    return True
+                match ancestor.test.lookup(name)[1]:
+                    case []:
+                        return False
+                    case [nodes.ImportFrom(modname="typing"), *_]:
+                        return True
                 match safe_infer(ancestor.test):
                     case nodes.Const(value=False):
                         return True
@@ -2075,11 +2072,14 @@ def is_hashable(node: nodes.NodeNG) -> bool:
     # pylint: disable = too-many-try-statements
     try:
         for inferred in node.infer():
-            if isinstance(inferred, (nodes.ClassDef, util.UninferableBase)):
-                return True
-            if not hasattr(inferred, "igetattr"):
-                return True
-            hash_fn = next(inferred.igetattr("__hash__"))
+            match inferred:
+                case nodes.ClassDef() | util.UninferableBase():
+                    return True
+                case object(igetattr=igetattr):
+                    pass
+                case _:
+                    return True
+            hash_fn = next(igetattr("__hash__"))
             if hash_fn.parent is inferred:
                 return True
             if getattr(hash_fn, "value", True) is not None:
