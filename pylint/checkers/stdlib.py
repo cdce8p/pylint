@@ -819,17 +819,16 @@ class StdlibChecker(DeprecatedMixin, BaseChecker):
             )
 
     def _check_redundant_assert(self, node: nodes.Call, infer: InferenceResult) -> None:
-        if (
-            isinstance(infer, astroid.BoundMethod)
-            and node.args
-            and isinstance(node.args[0], nodes.Const)
-            and infer.name in {"assertTrue", "assertFalse"}
-        ):
-            self.add_message(
-                "redundant-unittest-assert",
-                args=(infer.name, node.args[0].value),
-                node=node,
-            )
+        match (infer, node.args):
+            case [
+                astroid.BoundMethod(name="assertTrue" | "assertFalse"),
+                [nodes.Const(), *_],
+            ]:
+                self.add_message(
+                    "redundant-unittest-assert",
+                    args=(infer.name, node.args[0].value),
+                    node=node,
+                )
 
     def _check_datetime(self, node: nodes.NodeNG) -> None:
         """Check that a datetime was inferred, if so, emit boolean-datetime warning."""

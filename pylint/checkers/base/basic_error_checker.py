@@ -555,24 +555,17 @@ class BasicErrorChecker(_BasicChecker):
     ) -> None:
         """Check that a node is inside a for or while loop."""
         for parent in node.node_ancestors():
-            if isinstance(parent, (nodes.For, nodes.While)):
-                if node not in parent.orelse:
-                    return
+            match (parent, node):
+                case [nodes.For() | nodes.While(), _]:
+                    if node not in parent.orelse:
+                        return
 
-            if isinstance(parent, (nodes.ClassDef, nodes.FunctionDef)):
-                break
-            if (
-                isinstance(parent, nodes.Try)
-                and node in parent.finalbody
-                and isinstance(node, nodes.Continue)
-            ):
-                self.add_message("continue-in-finally", node=node)
-            if (
-                isinstance(parent, nodes.Try)
-                and node in parent.finalbody
-                and isinstance(node, nodes.Break)
-            ):
-                self.add_message("break-in-finally", node=node)
+                case [nodes.ClassDef() | nodes.FunctionDef(), _]:
+                    break
+                case [nodes.Try(), nodes.Continue()] if node in parent.finalbody:
+                    self.add_message("continue-in-finally", node=node)
+                case [nodes.Try(), nodes.Break()] if node in parent.finalbody:
+                    self.add_message("break-in-finally", node=node)
 
         self.add_message("not-in-loop", node=node, args=node_name)
 

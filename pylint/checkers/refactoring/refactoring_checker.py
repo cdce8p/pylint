@@ -1794,16 +1794,17 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             if isinstance(target, nodes.AssignName)
         }
 
-        is_concat_loop = (
-            aug_assign.op == "+="
-            and isinstance(aug_assign.target, nodes.AssignName)
-            and aug_assign.target.name in result_assign_names
-            and isinstance(assign.value, nodes.Const)
-            and isinstance(assign.value.value, str)
-            and self._name_to_concatenate(aug_assign.value) == target_name
-        )
-        if is_concat_loop:
-            self.add_message("consider-using-join", node=aug_assign)
+        match (aug_assign, assign.value):
+            case [
+                nodes.AugAssign(
+                    op="+=", target=nodes.AssignName(name=name), value=value
+                ),
+                nodes.Const(value=str()),
+            ] if (
+                name in result_assign_names
+                and self._name_to_concatenate(value) == target_name
+            ):
+                self.add_message("consider-using-join", node=aug_assign)
 
     @utils.only_required_for_messages("consider-using-join")
     def visit_augassign(self, node: nodes.AugAssign) -> None:
