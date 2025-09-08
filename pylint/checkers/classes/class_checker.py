@@ -1704,17 +1704,14 @@ a metaclass class method.",
     def _check_super_without_brackets(self, node: nodes.Attribute) -> None:
         """Check if there is a function call on a super call without brackets."""
         # Check if attribute call is in frame definition in class definition
-        frame = node.frame()
-        if not isinstance(frame, nodes.FunctionDef):
-            return
-        if not isinstance(frame.parent.frame(), nodes.ClassDef):
-            return
-        if not isinstance(node.parent, nodes.Call):
-            return
-        if not isinstance(node.expr, nodes.Name):
-            return
-        if node.expr.name == "super":
-            self.add_message("super-without-brackets", node=node.expr, confidence=HIGH)
+        match (node, node.frame()):
+            case [
+                nodes.Attribute(parent=nodes.Call(), expr=nodes.Name(name="super")),
+                nodes.FunctionDef(parent=parent),
+            ] if isinstance(parent.frame(), nodes.ClassDef):
+                self.add_message(
+                    "super-without-brackets", node=node.expr, confidence=HIGH
+                )
 
     @only_required_for_messages(
         "assigning-non-slot", "invalid-class-object", "access-member-before-definition"

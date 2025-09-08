@@ -3104,15 +3104,17 @@ class VariablesChecker(BaseChecker):
             return
         if utils.is_comprehension(node):
             return
-        if isinstance(inferred, util.UninferableBase):
-            return
-        if (
-            isinstance(inferred.parent, nodes.Arguments)
-            and isinstance(node.value, nodes.Name)
-            and node.value.name == inferred.parent.vararg
-        ):
-            # Variable-length argument, we can't determine the length.
-            return
+        match (inferred, node.value):
+            case [util.UninferableBase(), _]:
+                return
+            case [
+                nodes.NodeNG(parent=nodes.Arguments(vararg=vararg)),
+                nodes.Name(name=name),
+            ] if (
+                name == vararg
+            ):
+                # Variable-length argument, we can't determine the length.
+                return
 
         # Attempt to check unpacking is properly balanced
         values = self._nodes_to_unpack(inferred)

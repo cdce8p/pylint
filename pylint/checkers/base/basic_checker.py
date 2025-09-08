@@ -428,70 +428,76 @@ class BasicChecker(_BasicChecker):
     )
     def visit_expr(self, node: nodes.Expr) -> None:
         """Check for various kind of statements without effect."""
-        expr = node.value
-        if isinstance(expr, nodes.Const) and isinstance(expr.value, str):
-            # treat string statement in a separated message
-            # Handle PEP-257 attribute docstrings.
-            # An attribute docstring is defined as being a string right after
-            # an assignment at the module level, class level or __init__ level.
-            scope = expr.scope()
-            if isinstance(scope, (nodes.ClassDef, nodes.Module, nodes.FunctionDef)):
-                if isinstance(scope, nodes.FunctionDef) and scope.name != "__init__":
-                    pass
-                else:
-                    sibling = expr.previous_sibling()
+        match (expr := node.value, node.parent):
+            case [nodes.Const(value=str()), _]:
+                # treat string statement in a separated message
+                # Handle PEP-257 attribute docstrings.
+                # An attribute docstring is defined as being a string right after
+                # an assignment at the module level, class level or __init__ level.
+                scope = expr.scope()
+                if isinstance(scope, (nodes.ClassDef, nodes.Module, nodes.FunctionDef)):
                     if (
-                        sibling is not None
-                        and sibling.scope() is scope
-                        and isinstance(
-                            sibling, (nodes.Assign, nodes.AnnAssign, nodes.TypeAlias)
-                        )
+                        isinstance(scope, nodes.FunctionDef)
+                        and scope.name != "__init__"
                     ):
-                        return
-            self.add_message("pointless-string-statement", node=node)
-            return
+                        pass
+                    else:
+                        sibling = expr.previous_sibling()
+                        if (
+                            sibling is not None
+                            and sibling.scope() is scope
+                            and isinstance(
+                                sibling,
+                                (nodes.Assign, nodes.AnnAssign, nodes.TypeAlias),
+                            )
+                        ):
+                            return
+                self.add_message("pointless-string-statement", node=node)
+                return
 
-        # Warn W0133 for exceptions that are used as statements
-        if isinstance(expr, nodes.Call):
-            name = ""
-            if isinstance(expr.func, nodes.Name):
-                name = expr.func.name
-            elif isinstance(expr.func, nodes.Attribute):
-                name = expr.func.attrname
+            case [nodes.Call(), _]:
+                # Warn W0133 for exceptions that are used as statements
+                match expr.func:
+                    case nodes.Name(name=name) | nodes.Attribute(attrname=name):
+                        pass
+                    case _:
+                        name = ""
 
-            # Heuristic: only run inference for names that begin with an uppercase char
-            # This reduces W0133's coverage, but retains acceptable runtime performance
-            # For more details, see: https://github.com/pylint-dev/pylint/issues/8073
-            inferred = utils.safe_infer(expr) if name[:1].isupper() else None
-            if isinstance(inferred, objects.ExceptionInstance):
+                # Heuristic: only run inference for names that begin with an uppercase char
+                # This reduces W0133's coverage, but retains acceptable runtime performance
+                # For more details, see: https://github.com/pylint-dev/pylint/issues/8073
+                inferred = utils.safe_infer(expr) if name[:1].isupper() else None
+                if isinstance(inferred, objects.ExceptionInstance):
+                    self.add_message(
+                        "pointless-exception-statement", node=node, confidence=INFERENCE
+                    )
+                return
+
+            # Ignore if this is :
+            # * the unique child of a try/except body
+            # * a yield statement
+            # * an ellipsis (which can be used on Python 3 instead of pass)
+            # warn W0106 if we have any underlying function call (we can't predict
+            # side effects), else pointless-statement
+            case [nodes.Yield() | nodes.Await(), _]:
+                return
+            case [_, nodes.Try(body=[body]) | nodes.TryStar(body=[body])] if (
+                body == node
+            ):
+                return
+            case [nodes.Const(value=value), _] if value is Ellipsis:
+                return
+
+            case [nodes.NamedExpr(), _]:
                 self.add_message(
-                    "pointless-exception-statement", node=node, confidence=INFERENCE
+                    "named-expr-without-context", node=node, confidence=HIGH
                 )
-            return
-
-        # Ignore if this is :
-        # * the unique child of a try/except body
-        # * a yield statement
-        # * an ellipsis (which can be used on Python 3 instead of pass)
-        # warn W0106 if we have any underlying function call (we can't predict
-        # side effects), else pointless-statement
-        if (
-            isinstance(expr, (nodes.Yield, nodes.Await))
-            or (
-                isinstance(node.parent, (nodes.Try, nodes.TryStar))
-                and node.parent.body == [node]
-            )
-            or (isinstance(expr, nodes.Const) and expr.value is Ellipsis)
-        ):
-            return
-        if isinstance(expr, nodes.NamedExpr):
-            self.add_message("named-expr-without-context", node=node, confidence=HIGH)
-        elif any(expr.nodes_of_class(nodes.Call)):
-            self.add_message(
-                "expression-not-assigned", node=node, args=expr.as_string()
-            )
-        else:
-            self.add_message("pointless-statement", node=node)
+            case _ if any(expr.nodes_of_class(nodes.Call)):
+                self.add_message(
+                    "expression-not-assigned", node=node, args=expr.as_string()
+                )
+            case _:
+                self.add_message("pointless-statement", node=node)
 
     @staticmethod
     def _filter_vararg(
@@ -773,16 +779,13 @@ class BasicChecker(_BasicChecker):
         """Check unreachable code."""
         unreachable_statement = node.next_sibling()
         if unreachable_statement is not None:
-            if (
-                isinstance(node, nodes.Return)
-                and isinstance(unreachable_statement, nodes.Expr)
-                and isinstance(unreachable_statement.value, nodes.Yield)
-            ):
-                # Don't add 'unreachable' for empty generators.
-                # Only add warning if 'yield' is followed by another node.
-                unreachable_statement = unreachable_statement.next_sibling()
-                if unreachable_statement is None:
-                    return
+            match (node, unreachable_statement):
+                case [nodes.Return(), nodes.Expr(value=nodes.Yield())]:
+                    # Don't add 'unreachable' for empty generators.
+                    # Only add warning if 'yield' is followed by another node.
+                    unreachable_statement = unreachable_statement.next_sibling()
+                    if unreachable_statement is None:
+                        return
             self.add_message(
                 "unreachable", node=unreachable_statement, confidence=confidence
             )
