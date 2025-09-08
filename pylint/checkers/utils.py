@@ -1374,32 +1374,30 @@ def safe_infer(
     if not isinstance(value, util.UninferableBase):
         inferred_types.add(_get_python_type_of_node(value))
 
-    # pylint: disable = too-many-try-statements
     try:
         for inferred in infer_gen:
             inferred_type = _get_python_type_of_node(inferred)
             if inferred_type not in inferred_types:
                 return None  # If there is ambiguity on the inferred node.
-            if (
-                compare_constants
-                and isinstance(inferred, nodes.Const)
-                and isinstance(value, nodes.Const)
-                and inferred.value != value.value
-            ):
-                return None
-            if (
-                isinstance(inferred, nodes.FunctionDef)
-                and isinstance(value, nodes.FunctionDef)
-                and function_arguments_are_ambiguous(inferred, value)
-            ):
-                return None
-            if (
-                compare_constructors
-                and isinstance(inferred, nodes.ClassDef)
-                and isinstance(value, nodes.ClassDef)
-                and class_constructors_are_ambiguous(inferred, value)
-            ):
-                return None
+            match (compare_constants, compare_constructors, inferred, value):
+                case [True, _, nodes.Const(value=v1), nodes.Const(value=v2)] if (
+                    v1 != v2
+                ):
+                    return None
+                case [
+                    _,
+                    _,
+                    nodes.FunctionDef(),
+                    nodes.FunctionDef(),
+                ] if function_arguments_are_ambiguous(inferred, value):
+                    return None
+                case [
+                    _,
+                    True,
+                    nodes.ClassDef(),
+                    nodes.ClassDef(),
+                ] if class_constructors_are_ambiguous(inferred, value):
+                    return None
     except astroid.InferenceError:
         return None  # There is some kind of ambiguity
     except StopIteration:
