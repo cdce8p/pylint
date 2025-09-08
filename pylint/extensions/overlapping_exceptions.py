@@ -51,13 +51,15 @@ class OverlappingExceptionsChecker(checkers.BaseChecker):
 
             handled_in_clause: list[tuple[Any, Any]] = []
             for part, exc in excs:
-                if isinstance(exc, util.UninferableBase):
-                    continue
-                if isinstance(exc, astroid.Instance) and utils.inherit_from_std_ex(exc):
-                    exc = exc._proxied
-
-                if not isinstance(exc, nodes.ClassDef):
-                    continue
+                match exc:
+                    case util.UninferableBase():
+                        continue
+                    case astroid.Instance() if utils.inherit_from_std_ex(exc):
+                        exc = exc._proxied
+                    case nodes.ClassDef():  # TODO missing not
+                        pass
+                    case _:
+                        continue
 
                 exc_ancestors = [
                     a for a in exc.ancestors() if isinstance(a, nodes.ClassDef)

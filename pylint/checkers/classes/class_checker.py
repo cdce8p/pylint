@@ -1056,7 +1056,7 @@ a metaclass class method.",
                 ) if name not in slot_names and not utils.is_assign_name_annotated_with(
                     child.target, "ClassVar"
                 ):
-                    self.add_message(
+                    self.add_message(  # TODO pyright unreachable -> false-positive
                         "declare-non-slot",
                         args=child.target.name,
                         node=child.target,
@@ -1077,7 +1077,11 @@ a metaclass class method.",
             case [nodes.Dict(items=items), *_] if items:
                 for _, name_node in items:
                     # Exempt type annotations without value assignments
-                    if all(
+                    # if all(
+                    #     item.parent match nodes.AnnAssign(value=None)
+                    #     for item in ancestor.getattr(name_node.name)
+                    # )
+                    if all(  # TODO match expr
                         isinstance(item.parent, nodes.AnnAssign)
                         and item.parent.value is None
                         for item in ancestor.getattr(name_node.name)
@@ -1529,7 +1533,7 @@ a metaclass class method.",
                     except astroid.InferenceError:
                         return
                 try:
-                    if (
+                    if (  # TODO ClassPattern with dunder attributes doesn't work?
                         isinstance(inferred, (astroid.Instance, nodes.ClassDef))
                         and inferred.getattr("__get__")
                         and inferred.getattr("__set__")
@@ -1927,8 +1931,13 @@ a metaclass class method.",
     def _check_super_without_brackets(self, node: nodes.Attribute) -> None:
         """Check if there is a function call on a super call without brackets."""
         # Check if attribute call is in frame definition in class definition
+        # if (
+        #     (node match nodes.Attribute(parent=nodes.Call(), expr=nodes.Name(name="super")))
+        #     and (node.frame() match nodes.FunctionDef(parent=parent))
+        #     and isinstance(parent.frame(), nodes.ClassDef)
+        # ):
         match (node, node.frame()):
-            case [
+            case [  # TODO match expr
                 nodes.Attribute(parent=nodes.Call(), expr=nodes.Name(name="super")),
                 nodes.FunctionDef(parent=parent),
             ] if isinstance(parent.frame(), nodes.ClassDef):

@@ -105,13 +105,20 @@ class MatchStatementChecker(BaseChecker):
         reached.
         """
         for idx, case in enumerate(node.cases):
+            # if (  # TODO match expr
+            #     (case match nodes.MatchCase(
+            #         pattern=nodes.MatchAs(pattern=None, name=nodes.AssignName(name=name)), guard=None)
+            #     )
+            #     and (idx < len(node.cases) - 1)
+            # ):
+
             match case:
                 case nodes.MatchCase(
                     pattern=nodes.MatchAs(
                         pattern=None, name=nodes.AssignName(name=name)
                     ),
                     guard=None,
-                ) if (
+                ) if (  # TODO black
                     idx < len(node.cases) - 1
                 ):
                     self.add_message(

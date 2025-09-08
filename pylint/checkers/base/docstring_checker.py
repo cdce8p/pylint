@@ -34,9 +34,9 @@ def _infer_dunder_doc_attribute(
     except KeyError:
         return None
 
-    docstring = utils.safe_infer(docstring)
-    if isinstance(docstring, nodes.Const):
-        return str(docstring.value)
+    match docstring := utils.safe_infer(docstring):
+        case nodes.Const(value=value):
+            return str(value)
     return None
 
 
@@ -176,7 +176,7 @@ class DocStringChecker(_BasicChecker):
                 self.linter.stats.undocumented["klass"] += 1
             else:
                 self.linter.stats.undocumented[node_type] += 1
-            match node.body:
+            match node.body:  # TODO match expr
                 case [nodes.Expr(value=nodes.Call() as value), *_]:
                     # Most likely a string with a format call. Let's see.
                     match utils.safe_infer(value.func):
