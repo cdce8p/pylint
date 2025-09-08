@@ -108,7 +108,7 @@ class DataclassChecker(BaseChecker):
         make_dataclass() function.
         """
         inferred_func = utils.safe_infer(scope_node.func)
-        match (scope_node.func, inferred_func):
+        match (scope_node.func, inferred_func):  # TODO match expr
             case [
                 nodes.Name(name="make_dataclass")
                 | nodes.AssignName(name="make_dataclass"),

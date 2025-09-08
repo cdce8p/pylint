@@ -420,7 +420,7 @@ class StringFormatChecker(BaseChecker):
         self.add_message("f-string-without-interpolation", node=node)
 
     def visit_call(self, node: nodes.Call) -> None:
-        match func := utils.safe_infer(node.func):
+        match func := utils.safe_infer(node.func):  # TODO match expr
             case astroid.BoundMethod(
                 bound=astroid.Instance(name="str" | "unicode" | "bytes" as bound_name),
             ):
@@ -463,10 +463,11 @@ class StringFormatChecker(BaseChecker):
         #
         #    fmt = 'some string {}'.format
         #    fmt('arg')
-        if isinstance(node.func, nodes.Attribute) and not isinstance(
-            node.func.expr, nodes.Const
-        ):
-            return
+        match node.func:
+            case nodes.Attribute(expr=nodes.Const()):
+                pass
+            case nodes.Attribute():
+                return  # TODO not
         if node.starargs or node.kwargs:
             return
         try:

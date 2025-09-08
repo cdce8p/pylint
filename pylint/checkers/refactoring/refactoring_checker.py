@@ -11,7 +11,7 @@ import tokenize
 from collections.abc import Iterator
 from functools import cached_property, reduce
 from re import Pattern
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 import astroid
 from astroid import bases, nodes, objects
@@ -574,6 +574,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     @staticmethod
     def _is_bool_const(node: nodes.Return | nodes.Assign) -> bool:
+        # return nodes.values match nodes.Const(value=bool())  # TODO match expr
         match node.value:
             case nodes.Const(value=bool()):
                 return True
@@ -1082,27 +1083,27 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 pass
             case _:
                 return
+
         match name:
             case "dict":
-                if isinstance(element, nodes.Call):
-                    return
-
-                # If we have an `IfExp` here where both the key AND value
-                # are different, then don't raise the issue. See #5588
-                if (
-                    isinstance(element, nodes.IfExp)
-                    and isinstance(element.body, (nodes.Tuple, nodes.List))
-                    and len(element.body.elts) == 2
-                    and isinstance(element.orelse, (nodes.Tuple, nodes.List))
-                    and len(element.orelse.elts) == 2
-                ):
-                    key1, value1 = element.body.elts
-                    key2, value2 = element.orelse.elts
-                    if (
-                        key1.as_string() != key2.as_string()
-                        and value1.as_string() != value2.as_string()
-                    ):
+                match element:
+                    case nodes.Call():
                         return
+                    case nodes.IfExp(
+                        body=nodes.Tuple() | nodes.List() as body,
+                        orelse=nodes.Tuple() | nodes.List() as orelse,
+                    ) if (
+                        len(body.elts) == 2 and len(orelse.elts) == 2
+                    ):
+                        # If we have an `IfExp` here where both the key AND value
+                        # are different, then don't raise the issue. See #5588
+                        key1, value1 = body.elts
+                        key2, value2 = orelse.elts
+                        if (
+                            key1.as_string() != key2.as_string()
+                            and value1.as_string() != value2.as_string()
+                        ):
+                            return
 
                 message_name = "consider-using-dict-comprehension"
                 self.add_message(message_name, node=node)
@@ -1207,7 +1208,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
             case nodes.Call(
                 func=nodes.Name(name="super"),
                 args=[nodes.Name(name=name), nodes.Name(name="self")],
-            ) if (
+            ) if (  # TODO black
                 frame_class := node_frame_class(node)
             ) is not None and name == frame_class.name:
                 pass
@@ -1752,10 +1753,13 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
     def _name_to_concatenate(self, node: nodes.NodeNG) -> str | None:
         """Try to extract the name used in a concatenation loop."""
-        if isinstance(node, nodes.Name):
-            return cast("str | None", node.name)
-        if not isinstance(node, nodes.JoinedStr):
-            return None
+        match node:
+            case nodes.Name(name=name):
+                return name  # type: ignore[no-any-return]
+            case nodes.JoinedStr():
+                pass
+            case _:
+                return None
 
         match values := [
             value for value in node.values if isinstance(value, nodes.FormattedValue)
@@ -1767,6 +1771,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         # If there are more values in joined string than formatted values,
         # they are probably separators.
         # Allow them only if the option `suggest-join-with-non-empty-separator` is set
+        # TODO check condition len(values) is always 1
         with_separators = len(node.values) > len(values)
         if with_separators and not self._suggest_join_with_non_empty_separator:
             return None
@@ -1795,7 +1800,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         }
 
         match (aug_assign, assign.value):
-            case [
+            case [  # TODO match expr
                 nodes.AugAssign(
                     op="+=", target=nodes.AssignName(name=name), value=value
                 ),
@@ -1804,6 +1809,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
                 name in result_assign_names
                 and self._name_to_concatenate(value) == target_name
             ):
+                # TODO pyright unreachable
                 self.add_message("consider-using-join", node=aug_assign)
 
     @utils.only_required_for_messages("consider-using-join")
@@ -1820,13 +1826,17 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         self._check_unnecessary_dict_index_lookup(node)
         self._check_unnecessary_list_index_lookup(node)
 
+    # pylint: disable-next=too-many-branches
     def _check_unnecessary_comprehension(self, node: nodes.Comprehension) -> None:
-        if isinstance(node.parent, nodes.GeneratorExp) or not (
-            len(node.ifs) == 0
-            and len(node.parent.generators) == 1
-            and node.is_async is False
-        ):
-            return
+        match node:
+            case nodes.Comprehension(parent=nodes.GeneratorExp()):
+                return
+            case nodes.Comprehension(
+                parent=object(generators=[_]), ifs=[], is_async=False
+            ):
+                pass
+            case _:
+                return
 
         match node:
             case nodes.Comprehension(
@@ -1903,7 +1913,7 @@ class RefactoringChecker(checkers.BaseTokenChecker):
 
         All of: condition, true_value and false_value should not be a complex boolean expression
         """
-        match node:
+        match node:  # TODO match expr
             case nodes.BoolOp(
                 op="or", values=[nodes.BoolOp(op="and", values=[_, v1]), v2]
             ) if not (isinstance(v2, nodes.BoolOp) or isinstance(v1, nodes.BoolOp)):
@@ -2113,9 +2123,11 @@ class RefactoringChecker(checkers.BaseTokenChecker):
         if not node.body:
             return
 
-        last = node.body[-1]
-        if isinstance(last, nodes.Return) and len(node.body) == 1:
-            return
+        match node.body:
+            case [nodes.Return()]:
+                return
+            case [*_, last]:
+                pass
 
         while isinstance(last, (nodes.If, nodes.Try, nodes.ExceptHandler)):
             last = last.last_child()

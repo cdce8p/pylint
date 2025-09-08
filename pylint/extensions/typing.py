@@ -299,6 +299,10 @@ class TypingChecker(BaseChecker):
     def _is_deprecated_union_annotation(
         annotation: nodes.NodeNG, union_name: str
     ) -> TypeGuard[nodes.Subscript]:
+        # return (  # TODO match expression
+        #     annotation match nodes.Subscript(value=nodes.Name(name=n))
+        #     if n == union_name
+        # )
         match annotation:
             case nodes.Subscript(value=nodes.Name(name=name)):
                 return name == union_name  # type: ignore[no-any-return]
@@ -493,7 +497,7 @@ class TypingChecker(BaseChecker):
                     and inferred.qname() in TYPING_NORETURN
                 )
                 # In Python 3.7 - 3.8, NoReturn is alias of '_SpecialForm'
-                or (
+                or (  # TODO match expr
                     isinstance(inferred, bases.BaseInstance)
                     and isinstance(inferred._proxied, nodes.ClassDef)
                     and inferred._proxied.qname() == "typing._SpecialForm"
