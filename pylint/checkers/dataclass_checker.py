@@ -108,13 +108,13 @@ class DataclassChecker(BaseChecker):
         make_dataclass() function.
         """
         inferred_func = utils.safe_infer(scope_node.func)
-        if (
-            isinstance(scope_node.func, (nodes.Name, nodes.AssignName))
-            and scope_node.func.name == "make_dataclass"
-            and isinstance(inferred_func, nodes.FunctionDef)
-            and _is_dataclasses_module(inferred_func.root())
-        ):
-            return
+        match (scope_node.func, inferred_func):
+            case [
+                nodes.Name(name="make_dataclass")
+                | nodes.AssignName(name="make_dataclass"),
+                nodes.FunctionDef(),
+            ] if _is_dataclasses_module(inferred_func.root()):
+                return
         self.add_message(
             "invalid-field-call",
             node=node,

@@ -450,39 +450,39 @@ class NameChecker(_BasicChecker):
         "typevar-double-variance",
         "typevar-name-mismatch",
     )
-    def visit_assignname(  # pylint: disable=too-many-branches,too-many-statements
+    def visit_assignname(  # pylint: disable=too-many-branches
         self, node: nodes.AssignName
     ) -> None:
         """Check module level assigned names."""
         frame = node.frame()
         assign_type = node.assign_type()
 
-        # Check names defined in comprehensions
-        if isinstance(assign_type, nodes.Comprehension):
-            self._check_name("inlinevar", node.name, node)
+        match (frame, assign_type):
+            case [_, nodes.Comprehension()]:
+                # Check names defined in comprehensions
+                self._check_name("inlinevar", node.name, node)
 
-        elif isinstance(assign_type, nodes.TypeVar):
-            self._check_name("typevar", node.name, node)
+            case [_, nodes.TypeVar()]:
+                self._check_name("typevar", node.name, node)
 
-        elif isinstance(assign_type, nodes.ParamSpec):
-            self._check_name("paramspec", node.name, node)
+            case [_, nodes.ParamSpec()]:
+                self._check_name("paramspec", node.name, node)
 
-        elif isinstance(assign_type, nodes.TypeVarTuple):
-            self._check_name("typevartuple", node.name, node)
+            case [_, nodes.TypeVarTuple()]:
+                self._check_name("typevartuple", node.name, node)
 
-        elif isinstance(assign_type, nodes.TypeAlias):
-            self._check_name("typealias", node.name, node)
-
-        # Check names defined in module scope
-        elif isinstance(frame, nodes.Module):
-            # Check names defined in AnnAssign nodes
-            if isinstance(assign_type, nodes.AnnAssign) and self._assigns_typealias(
-                assign_type.annotation
-            ):
+            case [_, nodes.TypeAlias()]:
                 self._check_name("typealias", node.name, node)
 
-            # Check names defined in Assign nodes
-            elif isinstance(assign_type, (nodes.Assign, nodes.AnnAssign)):
+            # Check names defined in module scope
+            case [nodes.Module(), nodes.AnnAssign()] if self._assigns_typealias(
+                assign_type.annotation
+            ):
+                # Check names defined in AnnAssign nodes
+                self._check_name("typealias", node.name, node)
+
+            case [nodes.Module(), nodes.Assign() | nodes.AnnAssign()]:
+                # Check names defined in Assign nodes
                 inferred_assign_type = (
                     utils.safe_infer(assign_type.value) if assign_type.value else None
                 )
@@ -592,33 +592,35 @@ class NameChecker(_BasicChecker):
                             disallowed_check_only=redefines_import,
                         )
 
-        # Check names defined in function scopes
-        elif isinstance(frame, nodes.FunctionDef):
-            # global introduced variable aren't in the function locals
-            if node.name in frame and node.name not in frame.argnames():
-                if not _redefines_import(node):
-                    if isinstance(
-                        assign_type, nodes.AnnAssign
-                    ) and self._assigns_typealias(assign_type.annotation):
-                        self._check_name("typealias", node.name, node)
-                    else:
-                        self._check_name("variable", node.name, node)
+            # Check names defined in function scopes
+            case [nodes.FunctionDef(), _]:
+                # global introduced variable aren't in the function locals
+                if node.name in frame and node.name not in frame.argnames():
+                    if not _redefines_import(node):
+                        if isinstance(
+                            assign_type, nodes.AnnAssign
+                        ) and self._assigns_typealias(assign_type.annotation):
+                            self._check_name("typealias", node.name, node)
+                        else:
+                            self._check_name("variable", node.name, node)
 
-        # Check names defined in class scopes
-        elif isinstance(frame, nodes.ClassDef) and not any(
-            frame.local_attr_ancestors(node.name)
-        ):
-            if utils.is_assign_name_annotated_with_class_var_typing_name(node, "Final"):
-                self._check_name("class_const", node.name, node)
-            elif utils.is_assign_name_annotated_with(node, "Final"):
-                if frame.is_dataclass:
-                    self._check_name("class_attribute", node.name, node)
-                else:
+            # Check names defined in class scopes
+            case [nodes.ClassDef(), _] if not any(
+                frame.local_attr_ancestors(node.name)
+            ):
+                if utils.is_assign_name_annotated_with_class_var_typing_name(
+                    node, "Final"
+                ):
                     self._check_name("class_const", node.name, node)
-            elif utils.is_enum_member(node):
-                self._check_name("class_const", node.name, node)
-            else:
-                self._check_name("class_attribute", node.name, node)
+                elif utils.is_assign_name_annotated_with(node, "Final"):
+                    if frame.is_dataclass:
+                        self._check_name("class_attribute", node.name, node)
+                    else:
+                        self._check_name("class_const", node.name, node)
+                elif utils.is_enum_member(node):
+                    self._check_name("class_const", node.name, node)
+                else:
+                    self._check_name("class_attribute", node.name, node)
 
     def _name_type_in_main_block(self, node: nodes.AssignName) -> str:
         """Name type to check a name assigned in an ``if __name__ == "__main__":``
