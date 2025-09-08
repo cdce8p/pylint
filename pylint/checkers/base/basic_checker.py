@@ -397,16 +397,22 @@ class BasicChecker(_BasicChecker):
         )
         first_item = next(maybe_generator_assigned, None)
         if first_item is not None:
-            # Emit if this variable is certain to hold a generator
-            if all(itertools.chain((first_item,), maybe_generator_assigned)):
-                emit = True
-            # If this variable holds the result of a call, save it for next test
-            elif (
-                len(lookup_result[1]) == 1
-                and isinstance(lookup_result[1][0].parent, nodes.Assign)
-                and isinstance(lookup_result[1][0].parent.value, nodes.Call)
-            ):
-                maybe_generator_call = lookup_result[1][0].parent.value
+            match lookup_result:  # TODO match expr
+                case _ if all(itertools.chain((first_item,), maybe_generator_assigned)):
+                    # Emit if this variable is certain to hold a generator
+                    emit = True
+                case [
+                    _,
+                    [
+                        object(
+                            parent=nodes.Assign(
+                                value=nodes.Call() as maybe_generator_call
+                            )
+                        )
+                    ],
+                ]:
+                    # If this variable holds the result of a call, save it for next test
+                    pass
         return emit, maybe_generator_call
 
     def visit_module(self, _: nodes.Module) -> None:
@@ -506,14 +512,15 @@ class BasicChecker(_BasicChecker):
         # Return the arguments for the given call which are
         # not passed as vararg.
         for arg in call_args:
-            if isinstance(arg, nodes.Starred):
-                if (
-                    isinstance(arg.value, nodes.Name)
-                    and arg.value.name != node.args.vararg
+            match arg:
+                case nodes.Starred(value=nodes.Name(name=name)) if (
+                    name != node.args.vararg
                 ):
                     yield arg
-            else:
-                yield arg
+                case nodes.Starred():
+                    continue
+                case _:
+                    yield arg
 
     @staticmethod
     def _has_variadic_argument(

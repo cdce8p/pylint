@@ -75,6 +75,11 @@ class MatchStatementChecker(BaseChecker):
         reached.
         """
         for idx, case in enumerate(node.cases):
+            # if (  # TODO match expr
+            #     case.pattern match nodes.MatchAs(pattern=None, name=nodes.AssignName() as name)
+            #     and (idx < len(node.cases) - 1)
+            # ):
+
             match case.pattern:
                 case nodes.MatchAs(pattern=None, name=nodes.AssignName(name=name)) if (
                     idx < len(node.cases) - 1
