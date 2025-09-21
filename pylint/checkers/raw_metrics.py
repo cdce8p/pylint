@@ -73,9 +73,6 @@ class RawMetricsChecker(BaseTokenChecker):
             self.linter.stats.code_type_count[line_type] += lines_number
 
 
-JUNK = (tokenize.NL, tokenize.INDENT, tokenize.NEWLINE, tokenize.ENDMARKER)
-
-
 def get_type(
     tokens: list[tokenize.TokenInfo], start_index: int
 ) -> tuple[int, int, Literal["code", "docstring", "comment", "empty"]]:
@@ -88,14 +85,20 @@ def get_type(
         tok_type = tokens[i][0]
         pos = tokens[i][3]
         if line_type is None:
-            if tok_type == tokenize.STRING:
-                line_type = "docstring"
-            elif tok_type == tokenize.COMMENT:
-                line_type = "comment"
-            elif tok_type in JUNK:
-                pass
-            else:
-                line_type = "code"
+            match tok_type:
+                case tokenize.STRING:
+                    line_type = "docstring"
+                case tokenize.COMMENT:
+                    line_type = "comment"
+                case (
+                    tokenize.NL
+                    | tokenize.INDENT
+                    | tokenize.NEWLINE
+                    | tokenize.ENDMARKER
+                ):
+                    pass
+                case _:
+                    line_type = "code"
         i += 1
     if line_type is None:
         line_type = "empty"
