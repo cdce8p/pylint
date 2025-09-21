@@ -695,21 +695,21 @@ class NameChecker(_BasicChecker):
     @staticmethod
     def _assigns_typealias(node: nodes.NodeNG | None) -> bool:
         """Check if a node is assigning a TypeAlias."""
-        inferred = utils.safe_infer(node)
-        if isinstance(inferred, (nodes.ClassDef, bases.UnionType)):
-            qname = inferred.qname()
-            if qname == "typing.TypeAlias":
-                return True
-            if qname in {".Union", "builtins.Union", "builtins.UnionType"}:
-                # Union is a special case because it can be used as a type alias
-                # or as a type annotation. We only want to check the former.
-                assert node is not None
-                return not isinstance(node.parent, nodes.AnnAssign)
-        elif isinstance(inferred, nodes.FunctionDef):
-            # TODO: when py3.12 is minimum, remove this condition
-            # TypeAlias became a class in python 3.12
-            if inferred.qname() == "typing.TypeAlias":
-                return True
+        match inferred := utils.safe_infer(node):
+            case nodes.ClassDef() | bases.UnionType():
+                match inferred.qname():
+                    case "typing.TypeAlias":
+                        return True
+                    case ".Union" | "builtins.Union" | "builtins.UnionType":
+                        # Union is a special case because it can be used as a type alias
+                        # or as a type annotation. We only want to check the former.
+                        assert node is not None
+                        return not isinstance(node.parent, nodes.AnnAssign)
+            case nodes.FunctionDef():
+                # TODO: when py3.12 is minimum, remove this condition
+                # TypeAlias became a class in python 3.12
+                if inferred.qname() == "typing.TypeAlias":
+                    return True
         return False
 
     def _check_typevar(self, name: str, node: nodes.AssignName) -> None:

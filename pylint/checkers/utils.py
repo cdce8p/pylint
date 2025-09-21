@@ -854,16 +854,15 @@ def _is_property_decorator(decorator: nodes.Name) -> bool:
             returns: list[nodes.Return] = list(
                 inferred._get_return_nodes_skip_functions()
             )
-            if len(returns) == 1 and isinstance(
-                returns[0].value, (nodes.Name, nodes.Attribute)
-            ):
-                inferred = safe_infer(returns[0].value)
-                if (
-                    inferred
-                    and isinstance(inferred, objects.Property)
-                    and isinstance(inferred.function, nodes.FunctionDef)
-                ):
-                    return decorated_with_property(inferred.function)
+            match returns:
+                case [nodes.Return(value=nodes.Name() | nodes.Attribute() as value)]:
+                    inferred = safe_infer(value)
+                    if (
+                        inferred
+                        and isinstance(inferred, objects.Property)
+                        and isinstance(inferred.function, nodes.FunctionDef)
+                    ):
+                        return decorated_with_property(inferred.function)
     return False
 
 
@@ -1976,27 +1975,24 @@ def in_type_checking_block(node: nodes.NodeNG) -> bool:
     for ancestor in node.node_ancestors():
         if not isinstance(ancestor, nodes.If):
             continue
-        if isinstance(ancestor.test, nodes.Name):
-            if ancestor.test.name != "TYPE_CHECKING":
-                continue
-            lookup_result = ancestor.test.lookup(ancestor.test.name)[1]
-            if not lookup_result:
-                return False
-            maybe_import_from = lookup_result[0]
-            if (
-                isinstance(maybe_import_from, nodes.ImportFrom)
-                and maybe_import_from.modname == "typing"
-            ):
-                return True
-            match safe_infer(ancestor.test):
-                case nodes.Const(value=False):
+        match ancestor.test:
+            case nodes.Name(name="TYPE_CHECKING" as name):
+                lookup_result = ancestor.test.lookup(name)[1]
+                if not lookup_result:
+                    return False
+                maybe_import_from = lookup_result[0]
+                if (
+                    isinstance(maybe_import_from, nodes.ImportFrom)
+                    and maybe_import_from.modname == "typing"
+                ):
                     return True
-        elif isinstance(ancestor.test, nodes.Attribute):
-            if ancestor.test.attrname != "TYPE_CHECKING":
-                continue
-            match safe_infer(ancestor.test.expr):
-                case nodes.Module(name="typing"):
-                    return True
+                match safe_infer(ancestor.test):
+                    case nodes.Const(value=False):
+                        return True
+            case nodes.Attribute(attrname="TYPE_CHECKING", expr=expr):
+                match safe_infer(expr):
+                    case nodes.Module(name="typing"):
+                        return True
 
     return False
 
