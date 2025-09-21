@@ -144,27 +144,29 @@ class PrivateImportChecker(BaseChecker):
             # illegal usages later
             name_assignments = []
             for usage_node in node.locals[name]:
-                if isinstance(usage_node, nodes.AssignName) and isinstance(
-                    usage_node.parent, (nodes.AnnAssign, nodes.Assign)
-                ):
-                    match assign_parent := usage_node.parent:
-                        case nodes.AnnAssign():
-                            name_assignments.append(assign_parent)
-                            private_name = self._populate_type_annotations_annotation(
-                                assign_parent.annotation,
-                                all_used_type_annotations,
-                            )
-                        case nodes.Assign():
-                            name_assignments.append(assign_parent)
-
-                if isinstance(usage_node, nodes.FunctionDef):
-                    self._populate_type_annotations_function(
-                        usage_node, all_used_type_annotations
-                    )
-                if isinstance(usage_node, nodes.LocalsDictNodeNG):
-                    self._populate_type_annotations(
-                        usage_node, all_used_type_annotations
-                    )
+                match usage_node:
+                    case nodes.AssignName(
+                        parent=nodes.AnnAssign() | nodes.Assign() as assign_parent
+                    ):
+                        match assign_parent:
+                            case nodes.AnnAssign():
+                                name_assignments.append(assign_parent)
+                                private_name = (
+                                    self._populate_type_annotations_annotation(
+                                        assign_parent.annotation,
+                                        all_used_type_annotations,
+                                    )
+                                )
+                            case nodes.Assign():
+                                name_assignments.append(assign_parent)
+                    case nodes.FunctionDef():
+                        self._populate_type_annotations_function(
+                            usage_node, all_used_type_annotations
+                        )
+                    case nodes.LocalsDictNodeNG():
+                        self._populate_type_annotations(
+                            usage_node, all_used_type_annotations
+                        )
             if private_name is not None:
                 # Found a new private annotation, make sure we are not accessing it elsewhere
                 all_used_type_annotations[private_name] = (

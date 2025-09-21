@@ -1532,15 +1532,18 @@ a metaclass class method.",
             return False
         for slots in inferred_slots:
             # check if __slots__ is a valid type
-            if isinstance(slots, util.UninferableBase):
-                return False
-            if not is_iterable(slots) and not is_comprehension(slots):
-                return False
-            if isinstance(slots, nodes.Const):
-                return False
-            if not hasattr(slots, "itered"):
-                # we can't obtain the values, maybe a .deque?
-                return False
+            match slots:
+                case util.UninferableBase():
+                    return False
+                case _ if not is_iterable(slots) and not is_comprehension(slots):
+                    return False
+                case nodes.Const():
+                    return False
+                case object(itered=_):
+                    pass
+                case _:
+                    # we can't obtain the values, maybe a .deque?
+                    return False
 
         return True
 
@@ -1554,24 +1557,26 @@ a metaclass class method.",
             return
         for slots in inferred_slots:
             # check if __slots__ is a valid type
-            if isinstance(slots, util.UninferableBase):
-                continue
-            if not is_iterable(slots) and not is_comprehension(slots):
-                self.add_message("invalid-slots", node=node)
-                continue
-
-            if isinstance(slots, nodes.Const):
-                # a string, ignore the following checks
-                self.add_message("single-string-used-for-slots", node=node)
-                continue
-            if not hasattr(slots, "itered"):
-                # we can't obtain the values, maybe a .deque?
-                continue
+            match slots:
+                case util.UninferableBase():
+                    continue
+                case _ if not is_iterable(slots) and not is_comprehension(slots):
+                    self.add_message("invalid-slots", node=node)
+                    continue
+                case nodes.Const():
+                    # a string, ignore the following checks
+                    self.add_message("single-string-used-for-slots", node=node)
+                    continue
+                case object(itered=itered):
+                    pass
+                case _:
+                    # we can't obtain the values, maybe a .deque?
+                    continue
 
             if isinstance(slots, nodes.Dict):
                 values = [item[0] for item in slots.items]
             else:
-                values = slots.itered()
+                values = itered()
             if isinstance(values, util.UninferableBase):
                 continue
             for elt in values:

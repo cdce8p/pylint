@@ -110,11 +110,12 @@ class ModifiedIterationChecker(checkers.BaseChecker):
         iter_obj: nodes.Name | nodes.Attribute,
         infer_val: nodes.List | nodes.Set,
     ) -> bool:
-        iter_obj_name = (
-            iter_obj.attrname
-            if isinstance(iter_obj, nodes.Attribute)
-            else iter_obj.name
-        )
+        match iter_obj:
+            case nodes.Name(name=iter_obj_name) | nodes.Attribute(
+                attrname=iter_obj_name
+            ):
+                # bind name
+                pass
         return (infer_val == utils.safe_infer(iter_obj)) and (  # type: ignore[no-any-return]
             node.value.func.expr.name == iter_obj_name
         )

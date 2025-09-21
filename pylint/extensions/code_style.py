@@ -345,16 +345,16 @@ class CodeStyleChecker(BaseChecker):
 
     @only_required_for_messages("consider-using-augmented-assign")
     def visit_assign(self, node: nodes.Assign) -> None:
-        is_aug, op = utils.is_augmented_assign(node)
-        if is_aug:
-            self.add_message(
-                "consider-using-augmented-assign",
-                args=f"{op}=",
-                node=node,
-                line=node.lineno,
-                col_offset=node.col_offset,
-                confidence=INFERENCE,
-            )
+        match utils.is_augmented_assign(node):
+            case [True, op]:
+                self.add_message(
+                    "consider-using-augmented-assign",
+                    args=f"{op}=",
+                    node=node,
+                    line=node.lineno,
+                    col_offset=node.col_offset,
+                    confidence=INFERENCE,
+                )
 
 
 def register(linter: PyLinter) -> None:
