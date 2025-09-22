@@ -1622,6 +1622,7 @@ def is_node_in_type_annotation_context(node: nodes.NodeNG) -> bool:
                 parent_node.varargannotation,
                 parent_node.kwargannotation,
             ):
+                # TODO astroid iterator for Arguments
                 return True
             case nodes.FunctionDef(returns=ret) if ret == current_node:
                 return True
